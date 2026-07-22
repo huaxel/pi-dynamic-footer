@@ -1,0 +1,47 @@
+{
+  "name": "@juanbenjumea/pi-dynamic-footer",
+  "version": "0.1.0",
+  "description": "Dynamic configurable footer for pi with live observability: context gauge, TPS, token/cost tracking, subscription usage bars, git status, and a full settings UI.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Juan Benjumea",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "footer",
+    "observability",
+    "context",
+    "usage",
+    "tps",
+    "coding-agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/juanbenjumea/dotfiles.git",
+    "directory": "pi/packages/pi-dynamic-footer"
+  },
+  "bugs": {
+    "url": "https://github.com/juanbenjumea/dotfiles/issues"
+  },
+  "homepage": "https://github.com/juanbenjumea/dotfiles/tree/main/pi/packages/pi-dynamic-footer#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": ">=0.80.0",
+    "@earendil-works/pi-tui": "*"
+  },
+  "files": [
+    "index.ts",
+    "observability.ts",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ]
+}
