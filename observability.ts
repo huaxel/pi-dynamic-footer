@@ -592,7 +592,7 @@ export default function (pi: ExtensionAPI) {
     const historyStore = storage.jsonl<SessionSummary>("history");
     try {
       await historyStore.append(summary);
-      await historyStore.trim({ keepLast: 10 });
+      await historyStore.trim({ keepLast: 200 });
     } catch {
       if (ctx.hasUI) ctx.ui.notify("Could not save observability session history", "warning");
     }
