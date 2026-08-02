@@ -306,56 +306,14 @@ async function fetchCodexUsage(): Promise<QuotaSnapshot> {
   }
 }
 
-/* ───── opencode-go (ported from pi-quota-status) ───── */
+/* ───── opencode-go (shared dashboard parser) ───── */
 
-interface OpenCodeGoWindow {
-  usagePercent: number;
-  resetInSec: number;
-}
+import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
+import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
+
+export { parseOpenCodeGoDashboard };
 
 const OPENCODE_GO_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/148.0";
-const OPENCODE_GO_NUM = String.raw`(-?\d+(?:\.\d+)?)`;
-
-function opencodeGoWindowRegex(name: string): [RegExp, RegExp] {
-  return [
-    new RegExp(String.raw`${name}:\$R\[\d+\]=\{[^}]*usagePercent:${OPENCODE_GO_NUM}[^}]*resetInSec:${OPENCODE_GO_NUM}[^}]*\}`),
-    new RegExp(String.raw`${name}:\$R\[\d+\]=\{[^}]*resetInSec:${OPENCODE_GO_NUM}[^}]*usagePercent:${OPENCODE_GO_NUM}[^}]*\}`),
-  ];
-}
-
-const [RE_ROLLING_USAGE, RE_ROLLING_RESET] = opencodeGoWindowRegex("rollingUsage");
-const [RE_WEEKLY_USAGE, RE_WEEKLY_RESET] = opencodeGoWindowRegex("weeklyUsage");
-const [RE_MONTHLY_USAGE, RE_MONTHLY_RESET] = opencodeGoWindowRegex("monthlyUsage");
-
-function parseOpenCodeGoWindow(html: string, usageFirst: RegExp, resetFirst: RegExp): OpenCodeGoWindow | null {
-  let match = usageFirst.exec(html);
-  if (match) {
-    const usagePercent = Number(match[1]);
-    const resetInSec = Number(match[2]);
-    if (Number.isFinite(usagePercent) && Number.isFinite(resetInSec)) return { usagePercent, resetInSec };
-  }
-
-  match = resetFirst.exec(html);
-  if (match) {
-    const resetInSec = Number(match[1]);
-    const usagePercent = Number(match[2]);
-    if (Number.isFinite(usagePercent) && Number.isFinite(resetInSec)) return { usagePercent, resetInSec };
-  }
-
-  return null;
-}
-
-export function parseOpenCodeGoDashboard(html: string): {
-  rolling: OpenCodeGoWindow | null;
-  weekly: OpenCodeGoWindow | null;
-  monthly: OpenCodeGoWindow | null;
-} {
-  return {
-    rolling: parseOpenCodeGoWindow(html, RE_ROLLING_USAGE, RE_ROLLING_RESET),
-    weekly: parseOpenCodeGoWindow(html, RE_WEEKLY_USAGE, RE_WEEKLY_RESET),
-    monthly: parseOpenCodeGoWindow(html, RE_MONTHLY_USAGE, RE_MONTHLY_RESET),
-  };
-}
 
 /** Fetch usage for a single OpenCode Go workspace. */
 async function fetchSingleOpencodeGoUsage(

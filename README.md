@@ -44,6 +44,8 @@ pi install npm:@juanbenjumea/pi-dynamic-footer
 | Google Gemini | `auth.json` (`google-gemini-cli`) or `~/.gemini/oauth_creds.json` | Pro, Flash |
 | Kimi Coding | `auth.json` (`kimi-coding`) or `KIMI_API_KEY` env | Windows, Week |
 
+For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. Usage parsing uses [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.1.4+).
+
 ## Configuration
 
 ### Footer segments
