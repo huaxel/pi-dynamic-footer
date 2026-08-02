@@ -385,14 +385,42 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
     if (results.length > 0) {
       // Prefer the account the failover extension is actively using.
       const activeLabel = (globalThis as any).__opencode_go_active_label;
-      const active = activeLabel ? results.find((r) => r.label === activeLabel) : null;
-      if (active) {
-        return { provider: `opencode-go (${active.label})`, windows: buildSnapshot(active, active.label), fetchedAt: Date.now() };
-      }
+      const active = activeLabel
+        ? results.find((r) => r.label === activeLabel)
+        : null;
       // Otherwise pick the account with the lowest rolling usage.
-      results.sort((a, b) => effectivePct(a.rolling) - effectivePct(b.rolling));
-      const best = results[0]!;
-      return { provider: `opencode-go (${best.label})`, windows: buildSnapshot(best, best.label), fetchedAt: Date.now() };
+      const chosen =
+        active ??
+        [...results].sort(
+          (a, b) => effectivePct(a.rolling) - effectivePct(b.rolling),
+        )[0]!;
+      const windows = buildSnapshot(chosen, chosen.label);
+
+      // All accounts on cooldown: surface the failover extension's state as a
+      // full Cooldown bar with the earliest reset countdown.
+      const g = globalThis as Record<string, unknown>;
+      const allExhausted = g.__opencode_go_all_exhausted === true;
+      const earliest =
+        typeof g.__opencode_go_earliest_reset === "number"
+          ? (g.__opencode_go_earliest_reset as number)
+          : undefined;
+      if (allExhausted && earliest !== undefined) {
+        windows.push({
+          label: "Cooldown",
+          usedPercent: 100,
+          resetsIn: formatResetSeconds(
+            Math.max(0, Math.floor((earliest - Date.now()) / 1000)),
+          ),
+        });
+      }
+
+      return {
+        provider: allExhausted
+          ? "opencode-go (all exhausted)"
+          : `opencode-go (${chosen.label})`,
+        windows,
+        fetchedAt: Date.now(),
+      };
     }
   }
 
