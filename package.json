@@ -4,6 +4,9 @@
   "description": "Dynamic configurable footer for pi with live observability: context gauge, TPS, token/cost tracking, subscription usage bars, git status, and a full settings UI.",
   "type": "module",
   "license": "MIT",
+  "scripts": {
+    "test": "node --import ./tests/resolve-hook.mjs --test tests/*.test.ts"
+  },
   "author": "Juan Benjumea",
   "keywords": [
     "pi-package",
