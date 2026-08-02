@@ -121,7 +121,6 @@ function formatResetSeconds(seconds: number): string | undefined {
 }
 
 const MAX_JSON_RESPONSE_BYTES = 1_000_000;
-const MAX_TEXT_RESPONSE_BYTES = 2_000_000;
 
 async function readTextLimited(response: Response, maxBytes: number): Promise<string> {
   const contentLength = Number(response.headers.get("content-length"));
@@ -309,30 +308,10 @@ async function fetchCodexUsage(): Promise<QuotaSnapshot> {
 /* ───── opencode-go (shared dashboard parser) ───── */
 
 import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
+import { fetchDashboardUsage } from "@juanbenjumea/opencode-go-usage/lib/fetch.ts";
 import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
 
 export { parseOpenCodeGoDashboard };
-
-const OPENCODE_GO_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Gecko/20100101 Firefox/148.0";
-
-/** Fetch usage for a single OpenCode Go workspace. */
-async function fetchSingleOpencodeGoUsage(
-  workspaceId: string,
-  authCookie: string,
-): Promise<{ rolling: OpenCodeGoWindow | null; weekly: OpenCodeGoWindow | null; monthly: OpenCodeGoWindow | null; error?: string }> {
-  try {
-    const url = `https://opencode.ai/workspace/${encodeURIComponent(workspaceId)}/go`;
-    const { response, data: html } = await fetchJsonText(url, {
-      headers: { Cookie: `auth=${authCookie}`, "User-Agent": OPENCODE_GO_USER_AGENT },
-    });
-    if (!isAuthenticatedOpencodeUrl(response.url, workspaceId)) {
-      return { rolling: null, weekly: null, monthly: null, error: "auth-expired" };
-    }
-    return parseOpenCodeGoDashboard(html);
-  } catch (error) {
-    return { rolling: null, weekly: null, monthly: null, error: safeError(error) };
-  }
-}
 
 /**
  * Build the QuotaSnapshot from a single account's parsed usage.
@@ -396,7 +375,7 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
         const authCookie = (resolveAuthValue(acc.authCookie) || fallbackAuthCookie).trim();
         if (!workspaceId || !authCookie) return null;
 
-        const usage = await fetchSingleOpencodeGoUsage(workspaceId, authCookie);
+        const usage = await fetchDashboardUsage(workspaceId, authCookie);
         if (!usage.rolling && !usage.weekly && !usage.monthly) return null;
         return { label: String(acc.label || "?"), ...usage };
       }),
@@ -425,34 +404,11 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
     return { provider: "opencode-go", windows: [], error: "no-auth", fetchedAt: Date.now() };
   }
 
-  const parsed = await fetchSingleOpencodeGoUsage(workspaceId, authCookie);
+  const parsed = await fetchDashboardUsage(workspaceId, authCookie);
   if (parsed.error) {
     return { provider: "opencode-go", windows: [], error: parsed.error, fetchedAt: Date.now() };
   }
   return { provider: "opencode-go", windows: buildSnapshot(parsed), fetchedAt: Date.now() };
-}
-
-async function fetchJsonText(url: string, init: RequestInit, timeoutMs = 10_000): Promise<{ response: Response; data: string }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    // This request contains the OpenCode Go session cookie, so reject redirects.
-    const response = await fetch(url, { ...init, redirect: "error", signal: controller.signal });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return { response, data: await readTextLimited(response, MAX_TEXT_RESPONSE_BYTES) };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-function isAuthenticatedOpencodeUrl(url: string, workspaceId: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return parsed.origin === "https://opencode.ai" &&
-      parsed.pathname === `/workspace/${encodeURIComponent(workspaceId)}/go`;
-  } catch {
-    return false;
-  }
 }
 
 /* ───── ClinePass ───── */
