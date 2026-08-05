@@ -403,6 +403,7 @@ export default function (pi: ExtensionAPI) {
       preset: "standard",
       segments: {
         modelThink: true,
+        provider: true,
         runtime: true,
         pwd: true,
         git: true,

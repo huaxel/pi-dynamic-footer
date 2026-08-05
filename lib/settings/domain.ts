@@ -89,6 +89,7 @@ export function updateSetting(
       break;
     }
     case "modelThink":
+    case "provider":
     case "runtime":
     case "pwd":
     case "git":

@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: SettingsConfig = {
   preset: "standard",
   segments: {
     modelThink: true,
+    provider: true,
     runtime: true,
     pwd: true,
     git: true,
@@ -25,6 +26,7 @@ export const DEFAULT_SETTINGS: SettingsConfig = {
 export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> = {
   minimal: {
     modelThink: true,
+    provider: false,
     contextUsage: true,
     contextProgress: true,
     contextPercentage: false,
@@ -41,6 +43,7 @@ export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> =
   },
   standard: {
     modelThink: true,
+    provider: true,
     runtime: true,
     pwd: true,
     git: true,
@@ -57,6 +60,7 @@ export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> =
   },
   verbose: {
     modelThink: true,
+    provider: true,
     runtime: true,
     pwd: true,
     git: true,
@@ -73,6 +77,7 @@ export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> =
   },
   performance: {
     modelThink: true,
+    provider: true,
     runtime: false,
     pwd: false,
     git: false,
@@ -93,7 +98,12 @@ export const SEGMENT_METADATA: SegmentMetadata[] = [
   {
     id: "modelThink",
     label: "Model & Thinking",
-    description: "Show provider, current model and thinking level",
+    description: "Show current model and thinking level",
+  },
+  {
+    id: "provider",
+    label: "Provider",
+    description: "Show the serving provider next to session cost",
   },
   { id: "runtime", label: "Runtime", description: "Show session runtime timer" },
   { id: "pwd", label: "Working Directory", description: "Show current working directory" },

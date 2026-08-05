@@ -4,6 +4,7 @@ import type { QuotaSnapshot } from "../quota-provider.ts";
 
 export type SegmentKey =
   | "modelThink"
+  | "provider"
   | "runtime"
   | "pwd"
   | "git"

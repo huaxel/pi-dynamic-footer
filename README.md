@@ -11,7 +11,7 @@ Dynamic, configurable footer for [pi](https://github.com/earendil-works/pi) with
 - **Git status** — branch name, dirty state, added/removed lines
 - **Subscription usage bars** — rolling window quotas with reset timers for 8 provider types
 - **Fast mode indicator** — shows when priority/fast service tier is active
-- **Provider + model** — shows the serving provider (e.g. `commandcode/claude-sonnet-4-6`)
+- **Provider** — shows the serving provider next to session cost (e.g. `commandcode`)
 - **Thinking level** — displays current thinking mode (off/minimal/medium/high/xhigh)
 - **Labeled segments** — each data point has a compact label
 - **Settings UI** — `/obs-settings` command to toggle segments, configure zones, load presets
@@ -55,7 +55,8 @@ Use `/obs-settings` to toggle individual segments:
 
 | Segment | Shows |
 |---|---|
-| `modelThink` | Provider + model ID + thinking level |
+| `modelThink` | Model ID + thinking level |
+| `provider` | Serving provider (next to session cost) |
 | `runtime` | Session duration |
 | `pwd` | Current working directory |
 | `git` | Branch, dirty state, ± lines |

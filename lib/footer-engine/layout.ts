@@ -17,7 +17,7 @@ export const defaultAssembler: LayoutAssembler = (segments, width, theme) => {
     segments["tps"],
     segments["contextUsage"],
   ].filter(Boolean).join(sep);
-  // Line 2 — session / accounting
+  // Line 2 — session / accounting (provider sits next to the dollar amount)
   const line2 = [
     segments["runtime"],
     segments["pwd"],
@@ -25,6 +25,7 @@ export const defaultAssembler: LayoutAssembler = (segments, width, theme) => {
     segments["tokens"],
     segments["cache"],
     segments["cost"],
+    segments["provider"],
   ].filter(Boolean).join(sep);
   // Line 3 — quota bars only (separate line so it doesn't crowd accounting)
   const line3 = segments["usageBars"] || "";
@@ -59,6 +60,7 @@ export const defaultAssembler: LayoutAssembler = (segments, width, theme) => {
     segments["tokens"],
     segments["cache"],
     segments["cost"],
+    segments["provider"],
   ].filter(Boolean).join(sep);
 
   const narrow = [

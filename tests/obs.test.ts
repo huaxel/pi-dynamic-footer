@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { fmtTokens, shortenPath } from "../lib/footer-engine/format.js";
+import { defaultAssembler } from "../lib/footer-engine/layout.js";
 import { builtinRenderers } from "../lib/footer-engine/segments.js";
 import { setZone, updateSetting } from "../lib/settings/domain.js";
 import { createFileBackend } from "../lib/storage/file-backend.js";
@@ -174,44 +175,22 @@ test("turn counter shows current turn number", () => {
   assert.match(rendered, /#12/);
 });
 
-test("modelThink shows the provider before the model", () => {
+test("provider segment shows the provider name and hides when unknown", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
-  const rendered = builtinRenderers.modelThink!({
-    model: "claude-sonnet-4-6",
-    provider: "commandcode",
-    thinkingLevel: "medium",
-    fastModeEnabled: false,
-    serviceTier: null,
-    quotaUsage: null,
-    theme,
-  } as never);
-  assert.match(rendered, /^commandcode\/claude-sonnet-4-6:med/);
+  const shown = builtinRenderers.provider!({ provider: "commandcode", theme } as never);
+  assert.equal(shown, "commandcode");
+  const hidden = builtinRenderers.provider!({ provider: null, theme } as never);
+  assert.equal(hidden, "");
 });
 
-test("modelThink does not duplicate an inline provider prefix", () => {
+test("provider renders on the accounting line next to cost", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
-  const rendered = builtinRenderers.modelThink!({
-    model: "commandcode/claude-sonnet-4-6",
+  const segs = {
+    modelThink: "claude-sonnet-4-6:med",
+    runtime: "0:05",
+    cost: "$0.04",
     provider: "commandcode",
-    thinkingLevel: "off",
-    fastModeEnabled: false,
-    serviceTier: null,
-    quotaUsage: null,
-    theme,
-  } as never);
-  assert.match(rendered, /^commandcode\/claude-sonnet-4-6:off$/);
-});
-
-test("modelThink falls back to bare model id when provider unknown", () => {
-  const theme = { fg: (_color: string, text: string) => text } as never;
-  const rendered = builtinRenderers.modelThink!({
-    model: "claude-sonnet-4-6",
-    provider: null,
-    thinkingLevel: "off",
-    fastModeEnabled: false,
-    serviceTier: null,
-    quotaUsage: null,
-    theme,
-  } as never);
-  assert.match(rendered, /^claude-sonnet-4-6:off$/);
+  } as never;
+  const lines = defaultAssembler(segs, 100, theme as never);
+  assert.match(lines[1]!, /\$0\.04.*commandcode/);
 });
