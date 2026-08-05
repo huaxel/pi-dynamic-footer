@@ -194,3 +194,46 @@ test("provider renders on the accounting line next to cost", () => {
   const lines = defaultAssembler(segs, 100, theme as never);
   assert.match(lines[1]!, /\$0\.04.*commandcode/);
 });
+
+test("narrow screens drop turn counter and tps before the context gauge", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const segs = {
+    turnCount: "#3",
+    modelThink: "claude-sonnet-4-6:med",
+    tps: "⚡12 tok/s",
+    contextUsage: "c▮▮▮ 42%",
+  } as never;
+  const mobile = defaultAssembler(segs, 40, theme as never);
+  assert.match(mobile[0]!, /claude-sonnet-4-6/);
+  assert.match(mobile[0]!, /42%/);
+  assert.doesNotMatch(mobile[0]!, /#3/);
+  assert.doesNotMatch(mobile[0]!, /tok\/s/);
+});
+
+test("very narrow screens shrink the model but keep the context gauge", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const segs = {
+    modelThink: "claude-sonnet-4-6:med",
+    contextUsage: "c▮▮▮ 42%",
+  } as never;
+  const tiny = defaultAssembler(segs, 20, theme as never);
+  assert.match(tiny[0]!, /42%/); // gauge survives
+  assert.doesNotMatch(tiny[0]!, /claude-sonnet-4-6/); // model shrunk
+});
+
+test("accounting line keeps cost and provider on narrow screens", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const segs = {
+    runtime: "0:05",
+    pwd: "dotfiles",
+    git: "main",
+    tokens: "↑1.2k ↓3.4k",
+    cache: "cache 70%",
+    cost: "$0.04",
+    provider: "commandcode",
+  } as never;
+  const mobile = defaultAssembler(segs, 40, theme as never);
+  assert.match(mobile[1]!, /\$0\.04/);
+  assert.match(mobile[1]!, /commandcode/);
+  assert.doesNotMatch(mobile[1]!, /dotfiles/); // pwd dropped
+});

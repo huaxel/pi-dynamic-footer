@@ -14,6 +14,7 @@ Dynamic, configurable footer for [pi](https://github.com/earendil-works/pi) with
 - **Provider** — shows the serving provider next to session cost (e.g. `commandcode`)
 - **Thinking level** — displays current thinking mode (off/minimal/medium/high/xhigh)
 - **Labeled segments** — each data point has a compact label
+- **Narrow-screen safe** — on small terminals low-priority segments (turn counter, TPS, runtime, path) drop first so the context gauge, model, cost and provider always stay visible
 - **Settings UI** — `/obs-settings` command to toggle segments, configure zones, load presets
 - **Dashboard** — `/obs` command for full observability dashboard + last 10 sessions
 - **Toggle** — `/obs-toggle` to show/hide the footer
