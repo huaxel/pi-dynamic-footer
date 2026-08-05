@@ -25,6 +25,8 @@ export interface FooterSettings {
 
 export interface FooterInput {
   model: string;
+  /** Provider name from ctx.model.provider, null when unknown */
+  provider: string | null;
   thinkingLevel: string;
   runtimeMs: number;
   isStreaming: boolean;

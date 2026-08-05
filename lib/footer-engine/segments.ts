@@ -84,9 +84,21 @@ function renderUsageWindow(
 
 export const builtinRenderers: Record<string, SegmentRenderer> = {
   modelThink(input) {
-    const { model, thinkingLevel, fastModeEnabled, serviceTier, theme, quotaUsage } = input;
+    const { model, provider, thinkingLevel, fastModeEnabled, serviceTier, theme, quotaUsage } = input;
     const shortLevel = THINKING_ABBR[thinkingLevel] ?? thinkingLevel;
-    const text = `${stripProvider(model)}:${shortLevel}`;
+    // Show the provider explicitly (e.g. `commandcode/claude-sonnet-4-6`).
+    // Skip the prefix when the model id already carries it, so we never render
+    // `openai/openai/gpt-5.4`. Without a known provider, fall back to the
+    // legacy short-code stripping.
+    const hasProvider = typeof provider === "string" && provider.length > 0;
+    const alreadyPrefixed =
+      hasProvider &&
+      (model === provider ||
+        model.startsWith(`${provider}/`) ||
+        model.startsWith(`${provider}:`) ||
+        model.startsWith(`${provider} `));
+    const shown = hasProvider && !alreadyPrefixed ? `${provider}/${model}` : model;
+    const text = `${hasProvider ? shown : stripProvider(shown)}:${shortLevel}`;
     const tier = fastModeEnabled ? theme.fg("accent", ` ⚡${serviceTier ?? "fast"}`) : "";
     if (thinkingLevel === "xhigh" || thinkingLevel === "max") {
       return rainbowText(text) + tier;

@@ -199,6 +199,24 @@ function supportsFastMode(ctx: ExtensionContext): boolean {
   return model.api === "openai-responses" || model.api === "openai-codex-responses";
 }
 
+/** `provider/model` when both are known, otherwise the bare model id. */
+function modelLabel(ctx: ExtensionContext): string {
+  const model = ctx.model;
+  if (!model) return "none";
+  const { id, provider } = model;
+  if (!id) return "none";
+  if (
+    provider &&
+    id !== provider &&
+    !id.startsWith(`${provider}/`) &&
+    !id.startsWith(`${provider}:`) &&
+    !id.startsWith(`${provider} `)
+  ) {
+    return `${provider}/${id}`;
+  }
+  return id;
+}
+
 /* ───── Dashboard formatting ───── */
 
 type DashboardTheme = Pick<PiTheme, "fg" | "bold">;
@@ -229,8 +247,8 @@ function buildDashboard(
     theme.bold("Agent Observability Dashboard"),
     `Runtime: ${fmtDuration(runtime)}    Dir: ${shortenPath(ctx.cwd)}`,
     branch
-      ? `Branch: ${branch}    Model: ${ctx.model?.id ?? "none"}`
-      : `Model: ${ctx.model?.id ?? "none"}`,
+      ? `Branch: ${branch}    Model: ${modelLabel(ctx)}`
+      : `Model: ${modelLabel(ctx)}`,
     state.serviceTier
       ? `Service tier: ${state.serviceTier}${state.fastModeEnabled ? " (fast)" : ""}`
       : `Fast mode: ${state.fastModeSupported ? "available" : "not available"}`,
@@ -683,6 +701,7 @@ export default function (pi: ExtensionAPI) {
 
           const input: FooterInput = {
             model: ctx.model?.id ?? "no-model",
+            provider: ctx.model?.provider ?? null,
             thinkingLevel: pi.getThinkingLevel(),
             runtimeMs: Date.now() - state.startTime,
             isStreaming: state.isStreaming,

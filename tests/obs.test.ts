@@ -173,3 +173,45 @@ test("turn counter shows current turn number", () => {
   const rendered = builtinRenderers.turnCount!({ turnNumber: 12, theme } as never);
   assert.match(rendered, /#12/);
 });
+
+test("modelThink shows the provider before the model", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.modelThink!({
+    model: "claude-sonnet-4-6",
+    provider: "commandcode",
+    thinkingLevel: "medium",
+    fastModeEnabled: false,
+    serviceTier: null,
+    quotaUsage: null,
+    theme,
+  } as never);
+  assert.match(rendered, /^commandcode\/claude-sonnet-4-6:med/);
+});
+
+test("modelThink does not duplicate an inline provider prefix", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.modelThink!({
+    model: "commandcode/claude-sonnet-4-6",
+    provider: "commandcode",
+    thinkingLevel: "off",
+    fastModeEnabled: false,
+    serviceTier: null,
+    quotaUsage: null,
+    theme,
+  } as never);
+  assert.match(rendered, /^commandcode\/claude-sonnet-4-6:off$/);
+});
+
+test("modelThink falls back to bare model id when provider unknown", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.modelThink!({
+    model: "claude-sonnet-4-6",
+    provider: null,
+    thinkingLevel: "off",
+    fastModeEnabled: false,
+    serviceTier: null,
+    quotaUsage: null,
+    theme,
+  } as never);
+  assert.match(rendered, /^claude-sonnet-4-6:off$/);
+});

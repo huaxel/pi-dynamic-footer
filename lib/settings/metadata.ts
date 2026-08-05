@@ -93,7 +93,7 @@ export const SEGMENT_METADATA: SegmentMetadata[] = [
   {
     id: "modelThink",
     label: "Model & Thinking",
-    description: "Show current model and thinking level",
+    description: "Show provider, current model and thinking level",
   },
   { id: "runtime", label: "Runtime", description: "Show session runtime timer" },
   { id: "pwd", label: "Working Directory", description: "Show current working directory" },
