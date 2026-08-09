@@ -75,6 +75,7 @@ interface SessionState {
   startTime: number;
   turns: TurnRecord[];
   currentTurnStartTime: number | null;
+  currentTurnFirstTokenTime: number | null;
   currentTurnUpdateCount: number;
   currentTurnOutputTokens: number;
   totalCacheRead: number;
@@ -386,6 +387,7 @@ export default function (pi: ExtensionAPI) {
     startTime: Date.now(),
     turns: [],
     currentTurnStartTime: null,
+    currentTurnFirstTokenTime: null,
     currentTurnUpdateCount: 0,
     currentTurnOutputTokens: 0,
     totalCacheRead: 0,
@@ -428,6 +430,7 @@ export default function (pi: ExtensionAPI) {
     state.startTime = getSessionStartTime(ctx);
     state.turns = scanHistoricalTurns(ctx);
     state.currentTurnStartTime = null;
+    state.currentTurnFirstTokenTime = null;
     state.currentTurnUpdateCount = 0;
     state.currentTurnOutputTokens = 0;
     state.totalCacheRead = 0;
@@ -459,6 +462,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("turn_start", async (_event, _ctx) => {
     state.currentTurnStartTime = Date.now();
+    state.currentTurnFirstTokenTime = null;
     state.currentTurnUpdateCount = 0;
     state.currentTurnOutputTokens = 0;
     state.turnNumber++;
@@ -481,6 +485,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("message_update", async (event, _ctx) => {
+    // Record the first streaming update as the generation start. Measuring from
+    // here (rather than turn_start) excludes TTFT, prefill, and thinking time,
+    // so the reported tok/s reflects actual generation speed.
+    if (state.currentTurnFirstTokenTime === null) {
+      state.currentTurnFirstTokenTime = Date.now();
+    }
     state.currentTurnUpdateCount++;
 
     // Track actual output token count during streaming for live tok/s.
@@ -495,7 +505,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("turn_end", async (event, ctx) => {
-    const duration = state.currentTurnStartTime ? Date.now() - state.currentTurnStartTime : 0;
+    const turnDuration = state.currentTurnStartTime ? Date.now() - state.currentTurnStartTime : 0;
+    // Generation duration: first streaming token → turn end. Falls back to the
+    // full turn duration when no tokens streamed (e.g. tool-only turn).
+    const genDuration = state.currentTurnFirstTokenTime
+      ? Date.now() - state.currentTurnFirstTokenTime
+      : turnDuration;
 
     let inputTokens = 0;
     let outputTokens = 0;
@@ -505,6 +520,7 @@ export default function (pi: ExtensionAPI) {
     if (completedMessage?.role !== "assistant" || !completedMessage.usage) {
       state.isStreaming = false;
       state.currentTurnStartTime = null;
+      state.currentTurnFirstTokenTime = null;
       state.currentTurnUpdateCount = 0;
       return;
     }
@@ -520,15 +536,18 @@ export default function (pi: ExtensionAPI) {
     const safeInputTokens = Number.isFinite(inputTokens) ? Math.max(0, inputTokens) : 0;
     const safeOutputTokens = Number.isFinite(outputTokens) ? Math.max(0, outputTokens) : 0;
     const safeCost = Number.isFinite(cost) ? Math.max(0, cost) : 0;
-    const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
-    const tps = safeDuration > 0 ? safeOutputTokens / (safeDuration / 1000) : 0;
+    const safeTurnDuration = Number.isFinite(turnDuration) ? Math.max(0, turnDuration) : 0;
+    const safeGenDuration = Number.isFinite(genDuration) ? Math.max(0, genDuration) : 0;
+    // tok/s reflects generation speed (first token → end), not wall-clock
+    // turn time, so it isn't dragged down by TTFT/prefill/thinking.
+    const tps = safeGenDuration > 0 ? safeOutputTokens / (safeGenDuration / 1000) : 0;
 
     const record: TurnRecord = {
       turnIndex: event.turnIndex,
       inputTokens: safeInputTokens,
       outputTokens: safeOutputTokens,
       cost: safeCost,
-      durationMs: safeDuration,
+      durationMs: safeTurnDuration,
       tps,
       model: ctx.model?.id ?? completedMessage?.model ?? "unknown",
     };
@@ -536,6 +555,7 @@ export default function (pi: ExtensionAPI) {
     state.turns.push(record);
     state.isStreaming = false;
     state.currentTurnStartTime = null;
+    state.currentTurnFirstTokenTime = null;
     state.currentTurnUpdateCount = 0;
 
     pi.appendEntry("obs-turn", record);
@@ -707,6 +727,7 @@ export default function (pi: ExtensionAPI) {
             runtimeMs: Date.now() - state.startTime,
             isStreaming: state.isStreaming,
             currentTurnStartTime: state.currentTurnStartTime,
+            currentTurnFirstTokenTime: state.currentTurnFirstTokenTime,
             currentTurnUpdateCount: state.currentTurnUpdateCount,
             currentTurnOutputTokens: state.currentTurnOutputTokens,
             totalCacheRead: state.totalCacheRead,

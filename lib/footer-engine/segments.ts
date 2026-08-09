@@ -162,9 +162,13 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
   },
 
   tps(input) {
-    const { isStreaming, currentTurnStartTime, currentTurnOutputTokens, lastTurnTps, theme } = input;
+    const { isStreaming, currentTurnStartTime, currentTurnFirstTokenTime, currentTurnOutputTokens, lastTurnTps, theme } = input;
     if (isStreaming && currentTurnStartTime) {
-      const elapsed = (Date.now() - currentTurnStartTime) / 1000;
+      // Measure from the first token, not turn start, so live tok/s reflects
+      // generation speed rather than TTFT/prefill/thinking latency. Falls back
+      // to turn start when no tokens have streamed yet.
+      const genStart = currentTurnFirstTokenTime ?? currentTurnStartTime;
+      const elapsed = (Date.now() - genStart) / 1000;
       const liveTok = elapsed > 0 && currentTurnOutputTokens > 0
         ? currentTurnOutputTokens / elapsed
         : 0;

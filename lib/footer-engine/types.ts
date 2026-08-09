@@ -32,6 +32,7 @@ export interface FooterInput {
   runtimeMs: number;
   isStreaming: boolean;
   currentTurnStartTime: number | null;
+  currentTurnFirstTokenTime: number | null;
   currentTurnUpdateCount: number;
   lastTurnTps: number;
   totalInputTokens: number;

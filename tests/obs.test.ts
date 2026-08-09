@@ -146,6 +146,38 @@ test("live footer speed defaults to updates per second when no token data availa
   assert.match(rendered, /upd\/s$/);
 });
 
+test("live tps measures from first token, not turn start", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  // Generation started 0.5s ago, though the turn began 5s ago (TTFT/prefill).
+  const rendered = builtinRenderers.tps!({
+    isStreaming: true,
+    currentTurnStartTime: Date.now() - 5000,
+    currentTurnFirstTokenTime: Date.now() - 500,
+    currentTurnUpdateCount: 10,
+    currentTurnOutputTokens: 50,
+    lastTurnTps: 0,
+    theme,
+  } as never);
+  assert.match(rendered, /tok\/s$/);
+  // 50 tokens over 0.5s ≈ 100 tok/s, not ~10 tok/s over the full turn.
+  assert.match(rendered, /100 tok/);
+});
+
+test("live tps falls back to turn start before the first token", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  // No currentTurnFirstTokenTime yet: measure from turn start.
+  const rendered = builtinRenderers.tps!({
+    isStreaming: true,
+    currentTurnStartTime: Date.now() - 1000,
+    currentTurnFirstTokenTime: null,
+    currentTurnUpdateCount: 2,
+    currentTurnOutputTokens: 50,
+    lastTurnTps: 0,
+    theme,
+  } as never);
+  assert.match(rendered, /50 tok\/s$/);
+});
+
 test("live tps uses output token rate when available", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
   const rendered = builtinRenderers.tps!({
