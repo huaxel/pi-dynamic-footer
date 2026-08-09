@@ -7,10 +7,17 @@ import test from "node:test";
 import { fmtTokens, shortenPath } from "../lib/footer-engine/format.js";
 import { defaultAssembler } from "../lib/footer-engine/layout.js";
 import { builtinRenderers } from "../lib/footer-engine/segments.js";
-import { setZone, updateSetting } from "../lib/settings/domain.js";
+import { createDefaultSettings, setZone, updateSetting, validateSettings } from "../lib/settings/domain.js";
 import { createFileBackend } from "../lib/storage/file-backend.js";
 import { createMemoryBackend } from "../lib/storage/memory-backend.js";
-import { parseOpenCodeGoDashboard } from "../lib/quota-provider.js";
+import {
+  parseOpenCodeGoDashboard,
+  resolveAuthValue,
+  clampPercent,
+  normalizePercent,
+  formatResetTime,
+  safeError,
+} from "../lib/quota-provider.js";
 
 test("fmtTokens handles invalid and negative values", () => {
   assert.equal(fmtTokens(Number.NaN), "0");
@@ -236,4 +243,131 @@ test("accounting line keeps cost and provider on narrow screens", () => {
   assert.match(mobile[1]!, /\$0\.04/);
   assert.match(mobile[1]!, /commandcode/);
   assert.doesNotMatch(mobile[1]!, /dotfiles/); // pwd dropped
+});
+
+/* ───── resolveAuthValue ───── */
+
+test("resolveAuthValue rejects execution-prefixed (!) credentials", () => {
+  // Values beginning with `!` are intentionally ignored so this package
+  // never executes credential values from auth.json.
+  assert.equal(resolveAuthValue("!./fetch-token.sh"), undefined);
+  assert.equal(resolveAuthValue("!"), undefined);
+});
+
+test("resolveAuthValue resolves env-var indirection and unset ALL_CAPS to undefined", () => {
+  const previous = process.env.TEST_QUOTA_KEY;
+  process.env.TEST_QUOTA_KEY = "secret-value";
+  try {
+    assert.equal(resolveAuthValue("TEST_QUOTA_KEY"), "secret-value");
+    // A bare ALL_CAPS reference to an unset variable is unavailable (undefined),
+    // never a literal token.
+    assert.equal(resolveAuthValue("UNSET_TEST_VAR_XYZ"), undefined);
+  } finally {
+    if (previous === undefined) delete process.env.TEST_QUOTA_KEY;
+    else process.env.TEST_QUOTA_KEY = previous;
+  }
+});
+
+test("resolveAuthValue resolves $VAR and ${VAR} syntax", () => {
+  process.env.TEST_QUOTA_TOKEN = "tok-123";
+  try {
+    assert.equal(resolveAuthValue("$TEST_QUOTA_TOKEN"), "tok-123");
+    assert.equal(resolveAuthValue("${TEST_QUOTA_TOKEN}"), "tok-123");
+    assert.equal(resolveAuthValue("$UNSET_TOKEN_XYZ"), undefined);
+  } finally {
+    delete process.env.TEST_QUOTA_TOKEN;
+  }
+});
+
+test("resolveAuthValue passes through literals and $$/$! escapes", () => {
+  assert.equal(resolveAuthValue("sk-literal-key"), "sk-literal-key");
+  assert.equal(resolveAuthValue("$$LITERAL"), "$LITERAL");
+  assert.equal(resolveAuthValue("$!LITERAL"), "!LITERAL");
+  assert.equal(resolveAuthValue("  "), undefined);
+  assert.equal(resolveAuthValue(123 as never), undefined);
+});
+
+/* ───── percent helpers ───── */
+
+test("clampPercent clamps to [0,100] and coerces non-finite to bounds", () => {
+  assert.equal(clampPercent(50), 50);
+  assert.equal(clampPercent(0), 0);
+  assert.equal(clampPercent(100), 100);
+  assert.equal(clampPercent(150), 100);
+  assert.equal(clampPercent(-5), 0);
+  assert.equal(clampPercent(Number.NaN), 0);
+  assert.equal(clampPercent(Infinity), 100);
+  assert.equal(clampPercent(-Infinity), 0);
+});
+
+test("normalizePercent scales 0..1 fractions to percentages", () => {
+  assert.equal(normalizePercent(0.5), 50);
+  assert.equal(normalizePercent(1), 100);
+  assert.equal(normalizePercent(0), 0);
+  assert.equal(normalizePercent(75), 75);
+  assert.equal(normalizePercent(150), 100);
+  assert.equal(normalizePercent(Number.NaN), 0);
+});
+
+/* ───── formatResetTime ───── */
+
+test("formatResetTime renders past, minutes, hours, and days", () => {
+  const now = Date.now();
+  assert.equal(formatResetTime(new Date(now - 1000)), "now");
+  assert.equal(formatResetTime(new Date(now + 5 * 60_000)), "5m");
+  assert.equal(formatResetTime(new Date(now + 90 * 60_000)), "1h30m");
+  assert.equal(formatResetTime(new Date(now + 5 * 3_600_000)), "5h");
+  assert.equal(formatResetTime(new Date(now + 26 * 3_600_000)), "1d2h");
+  assert.equal(formatResetTime(new Date(now + 48 * 3_600_000)), "2d");
+});
+
+/* ───── safeError ───── */
+
+test("safeError maps HTTP errors, aborts, and unknowns", () => {
+  assert.equal(safeError(new Error("HTTP 429")), "HTTP 429");
+  assert.equal(safeError(new Error("HTTP 500")), "HTTP 500");
+  assert.equal(safeError(new DOMException("aborted", "AbortError")), "timeout");
+  assert.equal(safeError(new Error("network reset")), "unavailable");
+  assert.equal(safeError(new TypeError("boom")), "unavailable");
+  assert.equal(safeError("string error"), "unavailable");
+});
+
+/* ───── setZone invariant ───── */
+
+test("setZone enforces expert <= warning", () => {
+  const base = createDefaultSettings();
+  // Setting expert above warning pulls warning up to match.
+  let cfg = setZone(base, "expert", 95);
+  assert.equal(cfg.contextZones.expert, 95);
+  assert.equal(cfg.contextZones.warning, 95, "warning bumped to match expert");
+
+  // Setting warning below expert pulls expert down to match.
+  cfg = setZone(base, "warning", 50);
+  assert.equal(cfg.contextZones.warning, 50);
+  assert.equal(cfg.contextZones.expert, 50, "expert dropped to match warning");
+
+  // Normal case leaves both independent.
+  cfg = setZone(base, "expert", 65);
+  assert.equal(cfg.contextZones.expert, 65);
+  assert.equal(cfg.contextZones.warning, 85);
+});
+
+test("setZone clamps out-of-range values", () => {
+  const base = createDefaultSettings();
+  assert.equal(setZone(base, "expert", 150).contextZones.expert, 100);
+  assert.equal(setZone(base, "expert", -10).contextZones.expert, 0);
+  // NaN is ignored, keeps previous value
+  assert.equal(setZone(base, "expert", Number.NaN).contextZones.expert, 70);
+});
+
+/* ───── validateSettings ───── */
+
+test("validateSettings rejects unknown presets and falls back to standard", () => {
+  const cfg = validateSettings({
+    version: 1,
+    preset: "nonexistent",
+    segments: { modelThink: true },
+    contextZones: { expert: 70, warning: 85 },
+  });
+  assert.equal(cfg.preset, "standard");
 });

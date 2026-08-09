@@ -27,14 +27,14 @@ export function toSettingsListItems(config: SettingsConfig): SettingsListItem[] 
     {
       id: "expertZone",
       label: "Expert Zone Threshold",
-      description: "Context usage percentage where the bar turns green (0-100)",
+      description: "Context usage % at or below which the bar is green; above it turns yellow (0-100)",
       currentValue: `${config.contextZones.expert}`,
       values: ZONE_VALUE_OPTIONS.expert,
     },
     {
       id: "warningZone",
       label: "Warning Zone Threshold",
-      description: "Context usage percentage where the bar turns yellow (0-100)",
+      description: "Context usage % at or below which the bar is yellow; above it turns red (0-100)",
       currentValue: `${config.contextZones.warning}`,
       values: ZONE_VALUE_OPTIONS.warning,
     },

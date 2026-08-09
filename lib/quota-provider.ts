@@ -65,8 +65,11 @@ function resolveAuthValue(value: unknown): string | undefined {
   // environment variable instead.
   if (trimmed.startsWith("!")) return undefined;
 
-  if (/^[A-Z][A-Z0-9_]*$/.test(trimmed) && process.env[trimmed]) {
-    return process.env[trimmed];
+  // A bare ALL_CAPS token is treated as an environment-variable reference.
+  // If the variable is unset, the credential is unavailable (undefined) — we
+  // do not fall back to returning the variable name as a literal token.
+  if (/^[A-Z][A-Z0-9_]*$/.test(trimmed)) {
+    return process.env[trimmed] || undefined;
   }
 
   if (trimmed.startsWith("$$")) return trimmed.slice(1);
@@ -171,7 +174,10 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs = 10_000): Pr
 }
 
 function clampPercent(value: number): number {
-  if (!Number.isFinite(value)) return 0;
+  // NaN has no meaningful clamped value; surface it as 0 so a bad parse
+  // never renders as a full bar. ±Infinity clamps to the nearer bound.
+  if (Number.isNaN(value)) return 0;
+  if (!Number.isFinite(value)) return value > 0 ? 100 : 0;
   return Math.max(0, Math.min(100, value));
 }
 
@@ -312,6 +318,8 @@ import { fetchDashboardUsage } from "@juanbenjumea/opencode-go-usage/lib/fetch.t
 import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
 
 export { parseOpenCodeGoDashboard };
+
+export { resolveAuthValue, formatResetTime, clampPercent, normalizePercent, safeError };
 
 /**
  * Build the QuotaSnapshot from a single account's parsed usage.

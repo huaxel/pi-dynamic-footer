@@ -31,6 +31,7 @@ pi install npm:@juanbenjumea/pi-dynamic-footer
 |---|---|
 | `/obs` | Full observability dashboard + last 10 session summaries |
 | `/obs-toggle` | Show/hide the dynamic footer |
+| `/obs-toggle-path` | Toggle between folder name and full cwd path in the footer |
 | `/obs-settings` | Open footer settings UI (segment toggles, zones, presets) |
 
 ## Supported Providers (quota bars)
@@ -74,21 +75,27 @@ Use `/obs-settings` to toggle individual segments:
 
 ### Context zones
 
-Set the warning (yellow) and expert (red) thresholds in `/obs-settings`:
+Set the expert and warning thresholds in `/obs-settings`. The context
+usage bar is **green** at or below the expert zone, **yellow** between the
+expert and warning zones, and **red** above the warning zone:
 
 ```
-Warning zone:  70% (default)
-Expert zone:   90% (default)
+Expert zone:   70% (default)  — green/yellow boundary (bar turns yellow above this)
+Warning zone:  85% (default)  — yellow/red boundary (bar turns red above this)
 ```
+
+The expert zone must stay at or below the warning zone; setting one past the
+other automatically pulls the other along to preserve the green → yellow →
+red ordering.
 
 ### Presets
 
 | Preset | Description |
 |---|---|
-| `all` | Every segment enabled |
-| `minimal` | Model + context percentage only |
-| `developer` | Full stack: model, TPS, context, tokens, cost, cache, git, quota |
-| `ops` | Runtime, git, cost, quota bars |
+| `minimal` | Model + context usage bar, percentage, and token counts only |
+| `standard` | Default — model, runtime, pwd, git, context, tokens, cost, cache, quota bars (no live TPS) |
+| `verbose` | Everything, including live TPS and the turn counter |
+| `performance` | Focused on speed: model, context, TPS, cost (hides runtime, git, quota bars) |
 
 ### Environment variables
 
@@ -103,7 +110,7 @@ The extension hooks into pi's event system:
 - **`session_start`** — initializes state, fetches quota, sets footer
 - **`turn_start` / `message_update` / `turn_end`** — tracks TPS, token counts, cost
 - **`model_select`** — refreshes quota display on model switch
-- **`session_shutdown`** — persists last 10 session summaries
+- **`session_shutdown`** — persists the session summary (keeps the last 200, displays the 10 most recent in `/obs`)
 
 Token counts come from the assistant message's `usage` object (free with every LLM response). Quota data is fetched from each provider's dedicated API using credentials from `~/.pi/agent/auth.json` or environment variables.
 
