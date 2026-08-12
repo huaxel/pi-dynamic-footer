@@ -47,7 +47,7 @@ pi install npm:@juanbenjumea/pi-dynamic-footer
 | Google Gemini | `auth.json` (`google-gemini-cli`) or `~/.gemini/oauth_creds.json` | Pro, Flash |
 | Kimi Coding | `auth.json` (`kimi-coding`) or `KIMI_API_KEY` env | Windows, Week |
 
-For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. Usage parsing uses [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.1.4+).
+For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. Usage fetching uses the official OpenCode Go usage API via [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.2.0+); the legacy dashboard cookie scrape remains as a fallback when no API key is configured.
 
 ## Configuration
 

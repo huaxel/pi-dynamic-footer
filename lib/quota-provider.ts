@@ -311,10 +311,11 @@ async function fetchCodexUsage(): Promise<QuotaSnapshot> {
   }
 }
 
-/* ───── opencode-go (shared dashboard parser) ───── */
+/* ───── opencode-go (official usage API, legacy dashboard fallback) ───── */
 
-import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
+import { fetchUsageApi } from "@juanbenjumea/opencode-go-usage/lib/usage-api.ts";
 import { fetchDashboardUsage } from "@juanbenjumea/opencode-go-usage/lib/fetch.ts";
+import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
 import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
 
 export { parseOpenCodeGoDashboard };
@@ -359,6 +360,17 @@ function effectivePct(w: OpenCodeGoWindow | null): number {
   return w && Number.isFinite(w.usagePercent) ? w.usagePercent : Infinity;
 }
 
+/** Legacy dashboard fallback when no API key is available. */
+async function fetchOpencodeGoLegacy(
+  workspaceId: string,
+  authCookie: string,
+): Promise<{ rolling: OpenCodeGoWindow | null; weekly: OpenCodeGoWindow | null; monthly: OpenCodeGoWindow | null; error?: string } | null> {
+  if (!workspaceId || !authCookie) return null;
+  const usage = await fetchDashboardUsage(workspaceId, authCookie);
+  if (!usage.rolling && !usage.weekly && !usage.monthly) return null;
+  return usage;
+}
+
 async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
   const auth = loadAuthJson();
 
@@ -372,6 +384,7 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
       rolling: OpenCodeGoWindow | null;
       weekly: OpenCodeGoWindow | null;
       monthly: OpenCodeGoWindow | null;
+      error?: string;
     }> = [];
     const fallbackQuota = auth["quota-status"]?.["opencode-go"] ?? {};
     const fallbackWorkspaceId = resolveAuthValue(fallbackQuota.workspaceId) || "";
@@ -379,13 +392,20 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
     const fetched = await Promise.all(
       failoverAccounts.map(async (acc: JsonObject) => {
         if (!acc || typeof acc !== "object") return null;
+        const label = String(acc.label || "?");
+        const key = resolveAuthValue(acc.key);
+        // API-first: same key as chat completions, no cookie required.
+        if (key) {
+          const usage = await fetchUsageApi(key);
+          if (!usage.rolling && !usage.weekly && !usage.monthly) return null;
+          return { label, ...usage };
+        }
+        // Legacy cookie path for configs that predate the usage API.
         const workspaceId = (resolveAuthValue(acc.workspaceId) || fallbackWorkspaceId).trim();
         const authCookie = (resolveAuthValue(acc.authCookie) || fallbackAuthCookie).trim();
-        if (!workspaceId || !authCookie) return null;
-
-        const usage = await fetchDashboardUsage(workspaceId, authCookie);
-        if (!usage.rolling && !usage.weekly && !usage.monthly) return null;
-        return { label: String(acc.label || "?"), ...usage };
+        const usage = await fetchOpencodeGoLegacy(workspaceId, authCookie);
+        if (!usage) return null;
+        return { label, ...usage };
       }),
     );
     results.push(...fetched.filter((result): result is (typeof results)[number] => result !== null));
@@ -440,7 +460,10 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
     return { provider: "opencode-go", windows: [], error: "no-auth", fetchedAt: Date.now() };
   }
 
-  const parsed = await fetchDashboardUsage(workspaceId, authCookie);
+  const parsed = await fetchOpencodeGoLegacy(workspaceId, authCookie);
+  if (!parsed) {
+    return { provider: "opencode-go", windows: [], error: "no-auth", fetchedAt: Date.now() };
+  }
   if (parsed.error) {
     return { provider: "opencode-go", windows: [], error: parsed.error, fetchedAt: Date.now() };
   }

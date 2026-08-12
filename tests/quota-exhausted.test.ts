@@ -10,17 +10,19 @@ import { after, before, test } from "node:test";
 
 import { fetchQuota } from "../lib/quota-provider.ts";
 
-const FIXTURE_HTML = `
-rollingUsage:$R[0]={usagePercent:42.5,resetInSec:3600}
-weeklyUsage:$R[1]={resetInSec:86400,usagePercent:10}
-monthlyUsage:$R[2]={usagePercent:5,resetInSec:2592000}
-`;
+const FIXTURE_USAGE = () => ({
+  usage: {
+    rolling: { status: "ok", percent: 42.5, resetsAt: new Date(Date.now() + 3600_000).toISOString() },
+    weekly: { status: "ok", percent: 10, resetsAt: new Date(Date.now() + 86_400_000).toISOString() },
+    monthly: { status: "ok", percent: 5, resetsAt: new Date(Date.now() + 2_592_000_000).toISOString() },
+  },
+});
 
 const AUTH_FIXTURE = {
   "opencode-go-failover": {
     accounts: [
-      { key: "k1", workspaceId: "ws-1", authCookie: "c1", label: "sub-1" },
-      { key: "k2", workspaceId: "ws-2", authCookie: "c2", label: "sub-2" },
+      { key: "k1", label: "sub-1" },
+      { key: "k2", label: "sub-2" },
     ],
   },
 };
@@ -40,14 +42,15 @@ before(async () => {
   (globalThis as Record<string, unknown>).fetch = async (
     input: string | URL | Request,
   ) => {
-    const match = /workspace\/([^/]+)\/go/.exec(String(input));
-    const workspaceId = match?.[1] ?? "unknown";
-    return {
-      ok: true,
-      status: 200,
-      url: `https://opencode.ai/workspace/${workspaceId}/go`,
-      text: async () => FIXTURE_HTML,
-    };
+    const url = String(input);
+    if (url.includes("/zen/go/v1/usage")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => FIXTURE_USAGE(),
+      };
+    }
+    throw new Error(`unexpected fetch: ${url}`);
   };
 });
 
