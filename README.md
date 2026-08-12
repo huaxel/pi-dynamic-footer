@@ -9,7 +9,7 @@ Dynamic, configurable footer for [pi](https://github.com/earendil-works/pi) with
 - **Token tracking** — per-turn ↑input / ↓output counts, total session cost
 - **Cache ratio** — cache hit percentage
 - **Git status** — branch name, dirty state, added/removed lines
-- **Subscription usage bars** — rolling window quotas with reset timers for 8 provider types
+- **Subscription usage bars** — rolling window quotas with reset timers for 10 provider types
 - **Fast mode indicator** — shows when priority/fast service tier is active
 - **Provider** — shows the serving provider next to session cost (e.g. `commandcode`)
 - **Thinking level** — displays current thinking mode (off/minimal/medium/high/xhigh)
@@ -46,6 +46,23 @@ pi install npm:@juanbenjumea/pi-dynamic-footer
 | GitHub Copilot | `auth.json` (`github-copilot`) | Premium, Chat |
 | Google Gemini | `auth.json` (`google-gemini-cli`) or `~/.gemini/oauth_creds.json` | Pro, Flash |
 | Kimi Coding | `auth.json` (`kimi-coding`) or `KIMI_API_KEY` env | Windows, Week |
+| Cursor | `quota-sessions.json`, `auth.json` (`cursor.cookie`), `CURSOR_COOKIE`, CodexBar manual cookie, or Cursor app `state.vscdb` | Plan, Auto, API |
+| CommandCode | `quota-sessions.json`, `auth.json` (`commandcode.cookie`), `COMMANDCODE_COOKIE`, or CodexBar manual cookie | 5h, Week, Month |
+
+### Web session cookies (`quota-sessions.json`)
+
+Subscription quota for Cursor and CommandCode uses **website session cookies**, separate from API keys in `auth.json`:
+
+| File | Purpose | Track in git? |
+|---|---|---|
+| `~/.pi/agent/auth.json` | API keys / OAuth from `/login` | No |
+| `~/.pi/agent/quota-sessions.json` | Browser cookies for quota bars | No |
+
+Copy `pi/agent/quota-sessions.example.json` to `~/dotfiles/pi/agent/quota-sessions.json` (or `~/.pi/agent/` when `PI_CODING_AGENT_DIR` points elsewhere). Paste the **full `Cookie` header** from DevTools — do not guess the cookie name. CommandCode may use `__Secure-commandcode_prod_.session_token` (current production) or legacy `__Secure-better-auth.session_token`; the footer accepts any known session name from the header. Sync via SOPS (`secrets/pi-quota-sessions.json.enc`, same pipeline as `pi-auth.json`).
+
+For **Cursor**, quota data comes from `cursor.com/api/usage-summary`. On Linux, the footer can also derive a session from the signed-in Cursor app's access token. Cursor SDK API keys (`crsr_…`) do not expose subscription windows.
+
+For **CommandCode**, the footer calls `api.commandcode.ai/internal/billing/*`. Pi's `/login` API key is for chat only — put the browser session cookie in `quota-sessions.json`. Legacy `auth.json` `*.cookie` fields and CodexBar manual cookies still work as fallbacks.
 
 For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. Usage fetching uses the official OpenCode Go usage API via [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.2.0+); the legacy dashboard cookie scrape remains as a fallback when no API key is configured.
 

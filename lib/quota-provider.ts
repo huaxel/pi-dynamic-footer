@@ -6,7 +6,7 @@
  * sources and are never included in errors or logs.
  *
  * Supported providers: Claude, Codex, opencode-go, ClinePass, Umans,
- * GitHub Copilot, Google Gemini, and Kimi Coding.
+ * GitHub Copilot, Google Gemini, Kimi Coding, Cursor, and CommandCode.
  */
 
 import { createHash } from "node:crypto";
@@ -14,6 +14,10 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+import { authCredential, loadAuthJson, resolveAuthValue } from "./quota/auth.ts";
+import { fetchCommandCodeUsage } from "./quota/commandcode.ts";
+import { fetchCursorUsage } from "./quota/cursor.ts";
 
 /* ───── Types ───── */
 
@@ -38,69 +42,6 @@ export interface QuotaFetchOptions {
 /* ───── Auth and safe helpers ───── */
 
 type JsonObject = Record<string, any>;
-
-function getAgentDir(): string {
-  return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
-}
-
-function loadAuthJson(): JsonObject {
-  const authPath = join(getAgentDir(), "auth.json");
-  try {
-    if (existsSync(authPath)) {
-      return JSON.parse(readFileSync(authPath, "utf-8"));
-    }
-  } catch {
-    // Missing or malformed auth should render as unavailable, not break pi.
-  }
-  return {};
-}
-
-function resolveAuthValue(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-
-  // This extension never executes credential values from auth.json. Users
-  // who need dynamic credentials can provide the resolved token via an
-  // environment variable instead.
-  if (trimmed.startsWith("!")) return undefined;
-
-  // A bare ALL_CAPS token is treated as an environment-variable reference.
-  // If the variable is unset, the credential is unavailable (undefined) — we
-  // do not fall back to returning the variable name as a literal token.
-  if (/^[A-Z][A-Z0-9_]*$/.test(trimmed)) {
-    return process.env[trimmed] || undefined;
-  }
-
-  if (trimmed.startsWith("$$")) return trimmed.slice(1);
-  if (trimmed.startsWith("$!")) return trimmed.slice(1);
-
-  if (trimmed.startsWith("$")) {
-    const name = trimmed.slice(1).replace(/^\{(.*)\}$/, "$1");
-    return process.env[name] || undefined;
-  }
-
-  return trimmed;
-}
-
-function authCredential(...keys: string[]): string | undefined {
-  const auth = loadAuthJson();
-  for (const key of keys) {
-    const entry = auth[key];
-    if (typeof entry === "string") {
-      const value = resolveAuthValue(entry);
-      if (value) return value;
-      continue;
-    }
-    if (entry && typeof entry === "object") {
-      for (const field of ["access", "key", "token", "refresh"]) {
-        const value = resolveAuthValue(entry[field]);
-        if (value) return value;
-      }
-    }
-  }
-  return undefined;
-}
 
 function formatResetTime(date: Date): string {
   const diffMs = date.getTime() - Date.now();
@@ -206,6 +147,8 @@ const PROVIDER_MAP: Record<string, string> = {
   "github-copilot": "copilot",
   "google-gemini-cli": "gemini",
   "kimi-coding": "kimi",
+  cursor: "cursor",
+  commandcode: "commandcode",
 };
 
 /* ───── Claude ───── */
@@ -790,6 +733,8 @@ const FETCHERS: Record<string, (options: QuotaFetchOptions) => Promise<QuotaSnap
   copilot: async () => fetchCopilotUsage(),
   gemini: async () => fetchGeminiUsage(),
   kimi: async () => fetchKimiUsage(),
+  cursor: async () => fetchCursorUsage(),
+  commandcode: async () => fetchCommandCodeUsage(),
 };
 
 const cache = new Map<string, QuotaSnapshot>();
