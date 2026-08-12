@@ -64,7 +64,7 @@ For **Cursor**, quota data comes from `cursor.com/api/usage-summary`. On Linux, 
 
 For **CommandCode**, the footer calls `api.commandcode.ai/internal/billing/*`. Pi's `/login` API key is for chat only — put the browser session cookie in `quota-sessions.json`. Legacy `auth.json` `*.cookie` fields and CodexBar manual cookies still work as fallbacks.
 
-For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. Usage fetching uses the official OpenCode Go usage API via [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.2.0+); the legacy dashboard cookie scrape remains as a fallback when no API key is configured.
+For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. OpenCode Go, Cursor, and CommandCode quota fetching lives in [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.3.0+): OpenCode Go via the official usage API; Cursor/CommandCode via `quota-sessions.json` web cookies.
 
 ## Configuration
 

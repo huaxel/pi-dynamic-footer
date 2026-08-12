@@ -7,11 +7,15 @@ import { after, before, test } from "node:test";
 import { detectProvider, fetchQuota } from "../lib/quota-provider.ts";
 import {
   buildCommandCodeWindows,
+  fetchCommandCodeUsage,
+  fetchCursorUsage,
   parseCommandCodeCredits,
   parseCommandCodeSubscription,
-} from "../lib/quota/commandcode.ts";
-import { cursorCookieFromAccessToken, resolveCursorCookieHeader } from "../lib/quota/cursor-auth.ts";
-import { parseCursorUsageSummary } from "../lib/quota/cursor.ts";
+  resolveCommandCodeCookieHeader,
+  resolveCursorCookieHeader,
+  cursorCookieFromAccessToken,
+  parseCursorUsageSummary,
+} from "@juanbenjumea/opencode-go-usage";
 
 let tmpDir: string;
 let savedAgentDir: string | undefined;

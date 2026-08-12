@@ -15,9 +15,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { authCredential, loadAuthJson, resolveAuthValue } from "./quota/auth.ts";
-import { fetchCommandCodeUsage } from "./quota/commandcode.ts";
-import { fetchCursorUsage } from "./quota/cursor.ts";
+import { authCredential, loadAuthJson, resolveAuthValue } from "@juanbenjumea/opencode-go-usage";
+import { fetchCommandCodeUsage } from "@juanbenjumea/opencode-go-usage/commandcode.ts";
+import { fetchCursorUsage } from "@juanbenjumea/opencode-go-usage/cursor.ts";
 
 /* ───── Types ───── */
 
