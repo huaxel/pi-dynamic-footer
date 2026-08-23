@@ -1,5 +1,6 @@
 export type SegmentKey =
   | "modelThink"
+  | "provider"
   | "runtime"
   | "pwd"
   | "git"

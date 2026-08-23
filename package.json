@@ -5,7 +5,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "test": "node --import ./tests/resolve-hook.mjs --test tests/*.test.ts"
+    "test": "node --import ./tests/resolve-hook.mjs --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --skipLibCheck"
   },
   "author": "Juan Benjumea",
   "keywords": [
@@ -28,7 +29,7 @@
   },
   "homepage": "https://github.com/juanbenjumea/dotfiles/tree/main/pi/packages/pi-dynamic-footer#readme",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "pi": {
     "extensions": [

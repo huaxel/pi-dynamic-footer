@@ -205,7 +205,7 @@ async function fetchClaudeUsage(): Promise<QuotaSnapshot> {
 
 async function fetchCodexUsage(): Promise<QuotaSnapshot> {
   let token = authCredential("openai-codex");
-  let accountId = loadAuthJson()["openai-codex"]?.accountId;
+  let accountId = (loadAuthJson() as JsonObject)["openai-codex"]?.accountId;
 
   if (!token) {
     const codexPath = join(process.env.CODEX_HOME || join(homedir(), ".codex"), "auth.json");
@@ -315,7 +315,7 @@ async function fetchOpencodeGoLegacy(
 }
 
 async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
-  const auth = loadAuthJson();
+  const auth = loadAuthJson() as JsonObject;
 
   // Try multi-account failover config first.
   const failoverAccounts = Array.isArray(auth["opencode-go-failover"]?.accounts)
@@ -351,7 +351,7 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
         return { label, ...usage };
       }),
     );
-    results.push(...fetched.filter((result): result is (typeof results)[number] => result !== null));
+    results.push(...fetched.filter((result: (typeof fetched)[number]): result is (typeof results)[number] => result !== null));
 
     if (results.length > 0) {
       // Prefer the account the failover extension is actively using.

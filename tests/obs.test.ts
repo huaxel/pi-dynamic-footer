@@ -345,12 +345,15 @@ test("normalizePercent scales 0..1 fractions to percentages", () => {
 
 test("formatResetTime renders past, minutes, hours, and days", () => {
   const now = Date.now();
+  // Add a small slack to future boundaries so a few ms of Date.now() drift
+  // between the snapshot and formatResetTime's internal call can't drop the
+  // floor into the previous bucket (a 1ms-boundary flake).
   assert.equal(formatResetTime(new Date(now - 1000)), "now");
-  assert.equal(formatResetTime(new Date(now + 5 * 60_000)), "5m");
-  assert.equal(formatResetTime(new Date(now + 90 * 60_000)), "1h30m");
-  assert.equal(formatResetTime(new Date(now + 5 * 3_600_000)), "5h");
-  assert.equal(formatResetTime(new Date(now + 26 * 3_600_000)), "1d2h");
-  assert.equal(formatResetTime(new Date(now + 48 * 3_600_000)), "2d");
+  assert.equal(formatResetTime(new Date(now + 5 * 60_000 + 30_000)), "5m");
+  assert.equal(formatResetTime(new Date(now + 90 * 60_000 + 30_000)), "1h30m");
+  assert.equal(formatResetTime(new Date(now + 5 * 3_600_000 + 30_000)), "5h");
+  assert.equal(formatResetTime(new Date(now + 26 * 3_600_000 + 30_000)), "1d2h");
+  assert.equal(formatResetTime(new Date(now + 48 * 3_600_000 + 30_000)), "2d");
 });
 
 /* ───── safeError ───── */

@@ -1,4 +1,5 @@
 import { basename } from "node:path";
+import type { ThemeColor } from "@earendil-works/pi-coding-agent";
 import type { SegmentRenderer, FooterInput } from "./types.js";
 import {
   fmtDuration,
@@ -48,7 +49,7 @@ function maxQuotaPercent(input: FooterInput): number {
   return values.length > 0 ? Math.max(...values) : 0;
 }
 
-function quotaColor(usedPercent: number): string | null {
+function quotaColor(usedPercent: number): ThemeColor | null {
   if (usedPercent >= 92) return "error";
   if (usedPercent >= 85) return "warning";
   return null;
@@ -61,7 +62,7 @@ function renderUsageBar(usedPercent: number, barWidth: number, theme: FooterInpu
   const filled = Math.round((clamped / 100) * safeWidth);
   const empty = safeWidth - filled;
 
-  let color: string;
+  let color: ThemeColor;
   if (clamped >= 92) color = "error";
   else if (clamped >= 85) color = "warning";
   else color = "success";
@@ -131,7 +132,8 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
     const { contextUsage, theme, settings } = input;
     if (!contextUsage || !contextUsage.contextWindow) return "";
 
-    const tokens = Number.isFinite(contextUsage.tokens) ? Math.max(0, contextUsage.tokens) : 0;
+    const rawTokens = contextUsage.tokens ?? 0;
+    const tokens = Number.isFinite(rawTokens) ? Math.max(0, rawTokens) : 0;
     const max = contextUsage.contextWindow;
     if (!Number.isFinite(max) || max <= 0) return "";
     const pct = Math.min(100, Math.max(0, Math.round((tokens / max) * 100)));
