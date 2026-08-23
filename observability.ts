@@ -18,8 +18,6 @@
  *   /obs-settings - Open status bar settings (presets, segments, zones)
  */
 
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
@@ -51,7 +49,7 @@ import {
   type FooterInput,
 } from "./lib/footer-engine/index.js";
 
-import { createFileStorage, type Storage } from "./lib/storage/index.js";
+import { createFileStorage, getDefaultObservabilityDir, type Storage } from "./lib/storage/index.js";
 import { fetchQuota, type QuotaSnapshot } from "./lib/quota-provider.ts";
 
 /* ───── Types ───── */
@@ -350,7 +348,7 @@ function buildDashboard(
 
 export default function (pi: ExtensionAPI) {
   const storage: Storage = createFileStorage({
-    dir: join(homedir(), ".pi", "agent", "observability"),
+    dir: getDefaultObservabilityDir(),
   });
 
   let quotaEpoch = 0;
@@ -359,8 +357,14 @@ export default function (pi: ExtensionAPI) {
   async function refreshQuota(ctx: ExtensionContext): Promise<void> {
     const provider = ctx.model?.provider;
     const epoch = ++quotaEpoch;
-    state.quotaUsage = null;
-    if (!provider) return;
+    // Keep the previous snapshot visible while the new one is in flight so a
+    // periodic refresh doesn't blank the bars; the epoch guard below ensures a
+    // stale fetch can't overwrite a newer one.
+    if (!provider) {
+      state.quotaUsage = null;
+      requestFooterRender();
+      return;
+    }
 
     let apiKey: string | undefined;
     if (provider === "cline-pass" || provider === "umans") {
@@ -434,7 +438,9 @@ export default function (pi: ExtensionAPI) {
     state.currentTurnUpdateCount = 0;
     state.currentTurnOutputTokens = 0;
     state.totalCacheRead = 0;
-    state.turnNumber = 0;
+    // Resume the turn counter from the repopulated history so the footer's #N
+    // continues from where the prior session left off rather than restarting at 1.
+    state.turnNumber = state.turns.length;
     state.agentStartTime = null;
     state.isStreaming = false;
     state.fastModeSupported = supportsFastMode(ctx);
@@ -447,6 +453,8 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) ctx.ui.notify("Observability settings unavailable; using defaults", "warning");
     }
     state.quotaUsage = null;
+    state.showFullPath = process.env.PI_OBS_SHOW_FULL_PATH === "1" ||
+      process.env.PI_OBS_SHOW_FULL_PATH === "true";
 
     if (state.footerEnabled && ctx.hasUI) {
       setupFooter(ctx);
@@ -692,7 +700,7 @@ export default function (pi: ExtensionAPI) {
 
       const timer = setInterval(() => {
         void refreshDiff();
-      }, 1000);
+      }, 5_000);
 
       // Periodic quota refresh every 5 minutes (fetchQuota handles its own cache)
       const quotaTimer = setInterval(() => {
@@ -774,6 +782,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs", {
     description: "Show observability dashboard (tokens, cost, TPS, runtime, history)",
     handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
       const branchResult = await pi.exec("git", ["branch", "--show-current"], {
         cwd: ctx.cwd,
       });
@@ -823,6 +832,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs-toggle", {
     description: "Toggle the observability footer on/off",
     handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
       state.footerEnabled = !state.footerEnabled;
       if (state.footerEnabled) {
         setupFooter(ctx);
@@ -837,6 +847,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs-toggle-path", {
     description: "Toggle between folder name and full path in footer",
     handler: async (_args, ctx) => {
+      if (!ctx.hasUI) return;
       state.showFullPath = !state.showFullPath;
       const mode = state.showFullPath ? "full path" : "folder name";
       ctx.ui.notify(`Footer path: ${mode}`, "info");

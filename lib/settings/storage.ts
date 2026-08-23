@@ -1,15 +1,14 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import {
   createFileBackend,
   createMemoryBackend,
   createStorage,
+  getDefaultObservabilityDir,
   type Storage,
 } from "../storage/index.js";
 import { migrateSettings } from "./domain.js";
 import type { SettingsConfig } from "./types.js";
 
-const DEFAULT_DIR = join(homedir(), ".pi", "agent", "observability");
+const DEFAULT_DIR = getDefaultObservabilityDir();
 
 export function createSettingsStorage(options?: { dir?: string }): Storage {
   const dir = options?.dir ?? DEFAULT_DIR;

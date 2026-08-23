@@ -21,6 +21,21 @@ export function createStorage(backend: RawBackend): Storage {
 
 import { createFileBackend } from "./file-backend.js";
 import { createMemoryBackend } from "./memory-backend.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+/**
+ * Resolve the pi agent data dir, honoring PI_CODING_AGENT_DIR the same way
+ * pi's auth layer does. Observability history and settings live alongside
+ * auth.json so a custom agent dir carries them too.
+ */
+export function getAgentDir(): string {
+  return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");
+}
+
+export function getDefaultObservabilityDir(): string {
+  return join(getAgentDir(), "observability");
+}
 
 export function createFileStorage(options: { dir: string }): Storage {
   const backend = createFileBackend(options);

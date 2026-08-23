@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -10,6 +10,7 @@ import { builtinRenderers } from "../lib/footer-engine/segments.js";
 import { createDefaultSettings, setZone, updateSetting, validateSettings } from "../lib/settings/domain.js";
 import { createFileBackend } from "../lib/storage/file-backend.js";
 import { createMemoryBackend } from "../lib/storage/memory-backend.js";
+import { getAgentDir, getDefaultObservabilityDir } from "../lib/storage/index.js";
 import {
   parseOpenCodeGoDashboard,
   resolveAuthValue,
@@ -405,4 +406,20 @@ test("validateSettings rejects unknown presets and falls back to standard", () =
     contextZones: { expert: 70, warning: 85 },
   });
   assert.equal(cfg.preset, "standard");
+});
+
+/* ───── agent dir resolution ───── */
+
+test("getAgentDir honors PI_CODING_AGENT_DIR and defaults to ~/.pi/agent", () => {
+  const saved = process.env.PI_CODING_AGENT_DIR;
+  try {
+    process.env.PI_CODING_AGENT_DIR = "/tmp/custom-agent-dir";
+    assert.equal(getAgentDir(), "/tmp/custom-agent-dir");
+    assert.equal(getDefaultObservabilityDir(), "/tmp/custom-agent-dir/observability");
+    delete process.env.PI_CODING_AGENT_DIR;
+    assert.equal(getAgentDir(), join(homedir(), ".pi", "agent"));
+  } finally {
+    if (saved === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = saved;
+  }
 });

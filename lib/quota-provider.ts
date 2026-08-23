@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -158,11 +158,16 @@ async function fetchClaudeUsage(): Promise<QuotaSnapshot> {
 
   if (!token) {
     try {
-      const keychain = execFileSync(
-        "/usr/bin/security",
-        ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
-        { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"], timeout: 2000 },
-      ).trim();
+      // Resolve the macOS keychain credential asynchronously so a slow
+      // keychain lookup never blocks the TUI thread.
+      const keychain = await new Promise<string>((resolve, reject) => {
+        execFile(
+          "/usr/bin/security",
+          ["find-generic-password", "-s", "Claude Code-credentials", "-w"],
+          { encoding: "utf-8", timeout: 2000 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout)),
+        );
+      }).then((s) => s.trim());
       const parsed = JSON.parse(keychain);
       token = parsed.claudeAiOauth?.accessToken;
     } catch {
