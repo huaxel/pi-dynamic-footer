@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "test": "node --import ./tests/resolve-hook.mjs --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --skipLibCheck"
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --skipLibCheck index.ts observability.ts"
   },
   "author": "Juan Benjumea",
   "keywords": [
