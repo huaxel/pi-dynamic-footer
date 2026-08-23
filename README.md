@@ -135,7 +135,7 @@ Token counts come from the assistant message's `usage` object (free with every L
 
 - Tokens are read only to request usage data and remain in memory; they are never written to the footer's settings or history files, displayed, or logged.
 - Authenticated requests use the provider's fixed HTTPS API endpoint. Redirects are rejected and responses are size-limited.
-- The footer stores only the last ten local session summaries (cwd, branch, model, token totals, cost, and runtime) under `~/.pi/agent/observability/`. On POSIX systems, the directory is mode `0700` and its data files are mode `0600`.
+- The footer stores only the last ten local session summaries (cwd, branch, model, token totals, cost, and runtime) under `~/.pi/agent/observability/` (or `<PI_CODING_AGENT_DIR>/observability/` when that variable is set — the same override pi's auth layer honors). On POSIX systems, the directory is mode `0700` and its data files are mode `0600`.
 - Auth values beginning with `!` are intentionally ignored: this package never executes shell commands from `auth.json`. Supply a resolved credential through the provider's environment variable instead.
 
 ## Notes
