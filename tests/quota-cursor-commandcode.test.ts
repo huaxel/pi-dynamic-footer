@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { detectProvider, fetchQuota } from "../lib/quota-provider.ts";
+import { detectProvider, fetchQuota, quotaCacheSize } from "../lib/quota-provider.ts";
 import {
   buildCommandCodeWindows,
   fetchCommandCodeUsage,
@@ -39,6 +39,36 @@ after(async () => {
 test("detectProvider maps cursor and commandcode", () => {
   assert.equal(detectProvider("cursor"), "cursor");
   assert.equal(detectProvider("commandcode"), "commandcode");
+});
+
+test("quota cache evicts excess credential entries to stay bounded", async () => {
+  // Mock umans' fetch to succeed fast; rotate ~2x the cap worth of distinct
+  // apiKeys so eviction must kick in. Each key hashes to its own cache slot.
+  const savedFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("api.code.umans.ai/v1/usage")) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ limits: {}, usage: {} }),
+        body: null,
+      } as unknown as Response;
+    }
+    throw new Error(`unexpected fetch: ${url}`);
+  };
+  try {
+    for (let i = 0; i < 80; i++) {
+      await fetchQuota("umans", { apiKey: `key-${i}` });
+    }
+    assert.ok(
+      quotaCacheSize() <= 64,
+      `cache should stay bounded, got ${quotaCacheSize()}`,
+    );
+  } finally {
+    if (savedFetch) globalThis.fetch = savedFetch;
+    else delete (globalThis as Record<string, unknown>).fetch;
+  }
 });
 
 test("parseCursorUsageSummary keeps fractional percent units", () => {

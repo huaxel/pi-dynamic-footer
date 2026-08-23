@@ -745,6 +745,29 @@ const FETCHERS: Record<string, (options: QuotaFetchOptions) => Promise<QuotaSnap
 const cache = new Map<string, QuotaSnapshot>();
 const CACHE_TTL = 5 * 60_000;
 
+/** Rough ceiling on cached credentials; oldest entries are dropped first. */
+const CACHE_MAX_ENTRIES = 64;
+
+/** Drop entries older than CACHE_TTL, and excess ones beyond the cap. */
+function evictStaleCache(): void {
+  const cutoff = Date.now() - CACHE_TTL;
+  for (const [key, snapshot] of cache) {
+    if (snapshot.fetchedAt < cutoff) cache.delete(key);
+  }
+  while (cache.size > CACHE_MAX_ENTRIES) {
+    let oldestKey: string | null = null;
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const [key, snapshot] of cache) {
+      if (snapshot.fetchedAt < oldest) {
+        oldest = snapshot.fetchedAt;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey === null) break;
+    cache.delete(oldestKey);
+  }
+}
+
 export function detectProvider(piProvider: string): string | null {
   return PROVIDER_MAP[piProvider] || null;
 }
@@ -762,9 +785,23 @@ export async function fetchQuota(piProvider: string, options: QuotaFetchOptions 
   const cached = cacheKey ? cache.get(cacheKey) : undefined;
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) return cached;
 
+  // Opportunistically prune the cache on each miss so stale entries from
+  // rotated credentials or account switches don't accumulate forever.
+  evictStaleCache();
+
   const fetcher = FETCHERS[key];
   if (!fetcher) return null;
   const result = await fetcher(options);
-  if (cacheKey) cache.set(cacheKey, result);
+  if (cacheKey) {
+    cache.set(cacheKey, result);
+    // Prune after inserting so the cache never exceeds the cap (a bounded,
+    // once-in-a-while sweep during an active session is negligible).
+    evictStaleCache();
+  }
   return result;
+}
+
+/** Number of cached quota snapshots — test-support read for cache eviction. */
+export function quotaCacheSize(): number {
+  return cache.size;
 }
