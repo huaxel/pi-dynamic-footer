@@ -48,6 +48,7 @@ pi install npm:@juanbenjumea/pi-dynamic-footer
 | Kimi Coding | `auth.json` (`kimi-coding`) or `KIMI_API_KEY` env | Windows, Week |
 | Cursor | `quota-sessions.json`, `auth.json` (`cursor.cookie`), `CURSOR_COOKIE`, CodexBar manual cookie, or Cursor app `state.vscdb` | Plan, Auto, API |
 | CommandCode | `quota-sessions.json`, `auth.json` (`commandcode.cookie`), `COMMANDCODE_COOKIE`, or CodexBar manual cookie | 5h, Week, Month |
+| Openference | `auth.json` (`openference` from `/login`) or `OPENFERENCE_API_KEY` env | 5h, Week, Month |
 
 ### Web session cookies (`quota-sessions.json`)
 
@@ -63,6 +64,8 @@ Copy `pi/agent/quota-sessions.example.json` to `~/dotfiles/pi/agent/quota-sessio
 For **Cursor**, quota data comes from `cursor.com/api/usage-summary`. On Linux, the footer can also derive a session from the signed-in Cursor app's access token. Cursor SDK API keys (`crsr_…`) do not expose subscription windows.
 
 For **CommandCode**, the footer calls `api.commandcode.ai/internal/billing/*`. Pi's `/login` API key is for chat only — put the browser session cookie in `quota-sessions.json`. Legacy `auth.json` `*.cookie` fields and CodexBar manual cookies still work as fallbacks.
+
+For **Openference**, the footer calls `GET https://api.openference.com/v1/usage` with the same API key used for chat. `/login openference` stores that key in `auth.json`; `OPENFERENCE_API_KEY` is supported as a fallback.
 
 For **multi-account OpenCode Go rotation**, install [`@juanbenjumea/pi-multi-opencode-go`](https://www.npmjs.com/package/@juanbenjumea/pi-multi-opencode-go) alongside this footer. OpenCode Go, Cursor, and CommandCode quota fetching lives in [`@juanbenjumea/opencode-go-usage`](https://www.npmjs.com/package/@juanbenjumea/opencode-go-usage) (v0.3.0+): OpenCode Go via the official usage API; Cursor/CommandCode via `quota-sessions.json` web cookies.
 

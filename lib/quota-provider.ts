@@ -6,7 +6,7 @@
  * sources and are never included in errors or logs.
  *
  * Supported providers: Claude, Codex, opencode-go, ClinePass, Umans,
- * GitHub Copilot, Google Gemini, Kimi Coding, Cursor, and CommandCode.
+ * GitHub Copilot, Google Gemini, Kimi Coding, Cursor, CommandCode, and Openference.
  */
 
 import { createHash } from "node:crypto";
@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { authCredential, loadAuthJson, resolveAuthValue } from "@juanbenjumea/opencode-go-usage";
 import { fetchCommandCodeUsage } from "@juanbenjumea/opencode-go-usage/commandcode.ts";
 import { fetchCursorUsage } from "@juanbenjumea/opencode-go-usage/cursor.ts";
+import { fetchOpenferenceUsage } from "@juanbenjumea/opencode-go-usage/openference.ts";
 
 /* ───── Types ───── */
 
@@ -149,6 +150,7 @@ const PROVIDER_MAP: Record<string, string> = {
   "kimi-coding": "kimi",
   cursor: "cursor",
   commandcode: "commandcode",
+  openference: "openference",
 };
 
 /* ───── Claude ───── */
@@ -740,6 +742,7 @@ const FETCHERS: Record<string, (options: QuotaFetchOptions) => Promise<QuotaSnap
   kimi: async () => fetchKimiUsage(),
   cursor: async () => fetchCursorUsage(),
   commandcode: async () => fetchCommandCodeUsage(),
+  openference: async (options) => fetchOpenferenceUsage(options.apiKey),
 };
 
 const cache = new Map<string, QuotaSnapshot>();
