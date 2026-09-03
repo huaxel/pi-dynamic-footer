@@ -59,7 +59,7 @@ Subscription quota for Cursor and CommandCode uses **website session cookies**, 
 | `~/.pi/agent/auth.json` | API keys / OAuth from `/login` | No |
 | `~/.pi/agent/quota-sessions.json` | Browser cookies for quota bars | No |
 
-Copy `pi/agent/quota-sessions.example.json` to `~/dotfiles/pi/agent/quota-sessions.json` (or `~/.pi/agent/` when `PI_CODING_AGENT_DIR` points elsewhere). Paste the **full `Cookie` header** from DevTools — do not guess the cookie name. CommandCode may use `__Secure-commandcode_prod_.session_token` (current production) or legacy `__Secure-better-auth.session_token`; the footer accepts any known session name from the header. Sync via SOPS (`secrets/pi-quota-sessions.json.enc`, same pipeline as `pi-auth.json`).
+Create `quota-sessions.json` in the active agent dir (`$PI_CODING_AGENT_DIR` or `~/.pi/agent/`) and paste the **full `Cookie` header** from DevTools into the session entry — do not guess the cookie name. CommandCode may use `__Secure-commandcode_prod_.session_token` (current production) or legacy `__Secure-better-auth.session_token`; the footer accepts any known session name from the header. The file is never committed directly; on hosts that opt in, the SOPS pipeline (`secrets/pi-quota-sessions.json.enc`) deploys a decrypted copy via the post-deploy hook.
 
 For **Cursor**, quota data comes from `cursor.com/api/usage-summary`. On Linux, the footer can also derive a session from the signed-in Cursor app's access token. Cursor SDK API keys (`crsr_…`) do not expose subscription windows.
 
