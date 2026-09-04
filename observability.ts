@@ -456,7 +456,7 @@ export default function (pi: ExtensionAPI) {
     state.showFullPath = process.env.PI_OBS_SHOW_FULL_PATH === "1" ||
       process.env.PI_OBS_SHOW_FULL_PATH === "true";
 
-    if (state.footerEnabled && ctx.hasUI) {
+    if (state.footerEnabled && ctx.mode === "tui") {
       setupFooter(ctx);
     }
 
@@ -572,7 +572,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_end", async (event, ctx) => {
     state.isStreaming = false;
 
-    if (!ctx.hasUI || state.agentStartTime === null) {
+    if (ctx.mode !== "tui" || state.agentStartTime === null) {
       state.agentStartTime = null;
       return;
     }
@@ -607,7 +607,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    if (ctx.hasUI) teardownFooter(ctx);
+    if (ctx.mode === "tui") teardownFooter(ctx);
 
     const totalIn = state.turns.reduce((s, t) => s + t.inputTokens, 0);
     const totalOut = state.turns.reduce((s, t) => s + t.outputTokens, 0);
@@ -782,7 +782,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs", {
     description: "Show observability dashboard (tokens, cost, TPS, runtime, history)",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
+      if (ctx.mode !== "tui") return;
       const branchResult = await pi.exec("git", ["branch", "--show-current"], {
         cwd: ctx.cwd,
       });
@@ -832,7 +832,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs-toggle", {
     description: "Toggle the observability footer on/off",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
+      if (ctx.mode !== "tui") return;
       state.footerEnabled = !state.footerEnabled;
       if (state.footerEnabled) {
         setupFooter(ctx);
@@ -847,7 +847,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs-toggle-path", {
     description: "Toggle between folder name and full path in footer",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) return;
+      if (ctx.mode !== "tui") return;
       state.showFullPath = !state.showFullPath;
       const mode = state.showFullPath ? "full path" : "folder name";
       ctx.ui.notify(`Footer path: ${mode}`, "info");
@@ -857,7 +857,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("obs-settings", {
     description: "Open status bar settings (layout presets, segment toggles, context zones)",
     handler: async (_args, ctx) => {
-      if (!ctx.hasUI) {
+      if (ctx.mode !== "tui") {
         ctx.ui.notify("Settings UI requires interactive mode", "error");
         return;
       }
