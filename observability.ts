@@ -309,7 +309,7 @@ function buildDashboard(
 
     const headers = ["When", "Duration", "Turns", "Input", "Output", "Cost", "Model"];
     const rows = history
-      .slice()
+      .slice(-10)
       .reverse()
       .map((h) => {
         const date = new Date(h.endedAt).toLocaleDateString("en-US", {
@@ -354,39 +354,6 @@ export default function (pi: ExtensionAPI) {
   let quotaEpoch = 0;
   let requestFooterRender = () => {};
 
-  async function refreshQuota(ctx: ExtensionContext): Promise<void> {
-    const provider = ctx.model?.provider;
-    const epoch = ++quotaEpoch;
-    // Keep the previous snapshot visible while the new one is in flight so a
-    // periodic refresh doesn't blank the bars; the epoch guard below ensures a
-    // stale fetch can't overwrite a newer one.
-    if (!provider) {
-      state.quotaUsage = null;
-      requestFooterRender();
-      return;
-    }
-
-    let apiKey: string | undefined;
-    if (provider === "cline-pass" || provider === "umans" || provider === "openference") {
-      try {
-        const registry = (ctx as any).modelRegistry;
-        const resolved = await registry?.getApiKeyForProvider?.(provider);
-        if (typeof resolved === "string") apiKey = resolved;
-      } catch {
-        // The fetcher will fall back to environment/auth.json credentials.
-      }
-    }
-
-    try {
-      const snapshot = await fetchQuota(provider, { apiKey });
-      if (epoch === quotaEpoch) state.quotaUsage = snapshot;
-    } catch {
-      if (epoch === quotaEpoch) state.quotaUsage = null;
-    } finally {
-      requestFooterRender();
-    }
-  }
-
   const state: SessionState = {
     startTime: Date.now(),
     turns: [],
@@ -427,6 +394,39 @@ export default function (pi: ExtensionAPI) {
       contextZones: { expert: 70, warning: 85 },
     },
   };
+
+  async function refreshQuota(ctx: ExtensionContext): Promise<void> {
+    const provider = ctx.model?.provider;
+    const epoch = ++quotaEpoch;
+    // Keep the previous snapshot visible while the new one is in flight so a
+    // periodic refresh doesn't blank the bars; the epoch guard below ensures a
+    // stale fetch can't overwrite a newer one.
+    if (!provider) {
+      state.quotaUsage = null;
+      requestFooterRender();
+      return;
+    }
+
+    let apiKey: string | undefined;
+    if (provider === "cline-pass" || provider === "umans" || provider === "openference") {
+      try {
+        const registry = (ctx as any).modelRegistry;
+        const resolved = await registry?.getApiKeyForProvider?.(provider);
+        if (typeof resolved === "string") apiKey = resolved;
+      } catch {
+        // The fetcher will fall back to environment/auth.json credentials.
+      }
+    }
+
+    try {
+      const snapshot = await fetchQuota(provider, { apiKey });
+      if (epoch === quotaEpoch) state.quotaUsage = snapshot;
+    } catch {
+      if (epoch === quotaEpoch) state.quotaUsage = null;
+    } finally {
+      requestFooterRender();
+    }
+  }
 
   /* ─── Lifecycle ─── */
 
@@ -530,6 +530,7 @@ export default function (pi: ExtensionAPI) {
       state.currentTurnStartTime = null;
       state.currentTurnFirstTokenTime = null;
       state.currentTurnUpdateCount = 0;
+      state.currentTurnOutputTokens = 0;
       return;
     }
 
@@ -787,7 +788,7 @@ export default function (pi: ExtensionAPI) {
         cwd: ctx.cwd,
       });
       const branch = branchResult.stdout?.trim() || null;
-      const history = await storage.jsonl<SessionSummary>("history").read();
+      const history = await storage.jsonl<SessionSummary>("history").read({ last: 10 });
 
       await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
         let cachedWidth = 0;
