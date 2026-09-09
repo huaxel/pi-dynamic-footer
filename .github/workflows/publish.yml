@@ -20,12 +20,24 @@ jobs:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
-      - name: Remove setup-node placeholder token so OIDC auth is used
+      - name: Exchange GitHub OIDC token for npm token
+        id: npm-token
         run: |
-          npm config delete '//registry.npmjs.org/:_authToken' || true
-          npm config set registry https://registry.npmjs.org/
-          npm config set access public
+          set -euo pipefail
+          ID_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | jq -r '.value')
+          PKG=$(node -p "encodeURIComponent('@juanbenjumea/pi-dynamic-footer')")
+          RESPONSE=$(curl -sS -X POST -H "Authorization: Bearer $ID_TOKEN" \
+            "https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/$PKG")
+          echo "$RESPONSE" | jq -e '.token' >/dev/null || { echo "Token exchange failed: $RESPONSE"; exit 1; }
+          NPM_TOKEN=$(echo "$RESPONSE" | jq -r '.token')
+          echo "::add-mask::$NPM_TOKEN"
+          echo "token=$NPM_TOKEN" >> "$GITHUB_OUTPUT"
       - run: npm install
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.npm-token.outputs.token }}
       - run: npm test
       - run: npm run typecheck
-      - run: npm publish --provenance
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ steps.npm-token.outputs.token }}
