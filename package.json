@@ -21,7 +21,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/huaxel/pi-dynamic-footer.git"
+    "url": "https://github.com/huaxel/pi-dynamic-footer"
   },
   "bugs": {
     "url": "https://github.com/huaxel/pi-dynamic-footer/issues"
