@@ -22,13 +22,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/juanbenjumea/dotfiles.git",
-    "directory": "pi/packages/pi-dynamic-footer"
+    "url": "https://github.com/huaxel/pi-dynamic-footer"
   },
   "bugs": {
-    "url": "https://github.com/juanbenjumea/dotfiles/issues"
+    "url": "https://github.com/huaxel/pi-dynamic-footer/issues"
   },
-  "homepage": "https://github.com/juanbenjumea/dotfiles/tree/main/pi/packages/pi-dynamic-footer#readme",
+  "homepage": "https://github.com/huaxel/pi-dynamic-footer#readme",
   "engines": {
     "node": ">=20.0.0"
   },
