@@ -60,8 +60,11 @@ export function validateSettings(raw: unknown): SettingsConfig {
   const preset = isPresetName(r.preset) ? r.preset : DEFAULT_SETTINGS.preset;
   const segments = validateSegments(r.segments);
   const contextZones = validateZones(r.contextZones);
+  const showFullPath = typeof r.showFullPath === "boolean"
+    ? r.showFullPath
+    : DEFAULT_SETTINGS.showFullPath;
 
-  return { version: 1, preset, segments, contextZones };
+  return { version: 1, preset, segments, contextZones, showFullPath };
 }
 
 export function migrateSettings(raw: unknown): SettingsConfig {
@@ -115,6 +118,10 @@ export function updateSetting(
           derivedUpdates.push({ id: child, value: "false" });
         }
       }
+      break;
+    }
+    case "showFullPath": {
+      next.showFullPath = value === "true";
       break;
     }
     case "expertZone": {

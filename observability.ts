@@ -13,23 +13,25 @@
  * agent run, so the standalone TPS extension is no longer needed.
  *
  * Commands:
- *   /obs          - Print full observability dashboard + last 10 sessions
- *   /obs-toggle   - Toggle the observability footer on/off
- *   /obs-settings - Open status bar settings (presets, segments, zones)
+ *   /footer                 - Interactive footer action menu
+ *   /footer menu            - Interactive footer action menu
+ *   /footer toggle          - Toggle the observability footer on/off
+ *   /footer path            - Toggle folder name/full path
+ *   /footer settings        - Open footer settings
+
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
+  ExtensionCommandContext,
   ExtensionContext,
-  Theme as PiTheme,
 } from "@earendil-works/pi-coding-agent";
 import {
   Key,
   matchesKey,
   SettingsList,
   truncateToWidth,
-  visibleWidth,
 } from "@earendil-works/pi-tui";
 
 import {
@@ -41,21 +43,15 @@ import {
   type SettingsConfig,
 } from "./lib/settings/index.js";
 
-import {
-  renderFooter,
-  fmtDuration,
-  fmtTokens,
-  shortenPath,
-  type FooterInput,
-} from "./lib/footer-engine/index.js";
+import { renderFooter, type FooterInput } from "./lib/footer-engine/index.js";
 
 import { createFileStorage, getDefaultObservabilityDir, type Storage } from "./lib/storage/index.js";
 import { fetchQuota, type QuotaSnapshot } from "./lib/quota-provider.ts";
+import { registerOpencodeGoRefresh } from "./lib/opencode-go-integration.ts";
 
 /* ───── Types ───── */
 
 interface TurnRecord {
-  turnIndex: number;
   inputTokens: number;
   outputTokens: number;
   cost: number;
@@ -64,13 +60,9 @@ interface TurnRecord {
   model: string;
 }
 
-interface PersistedTurn {
-  customType: "obs-turn";
-  data: TurnRecord;
-}
-
 interface SessionState {
   startTime: number;
+  /** Turns completed during this extension session only. */
   turns: TurnRecord[];
   currentTurnStartTime: number | null;
   currentTurnFirstTokenTime: number | null;
@@ -84,100 +76,20 @@ interface SessionState {
   fastModeSupported: boolean;
   fastModeEnabled: boolean;
   serviceTier: string | null;
-  showFullPath: boolean;
   settings: SettingsConfig;
   quotaUsage: QuotaSnapshot | null;
 }
 
-interface SessionSummary {
-  endedAt: number;
-  runtimeMs: number;
-  turns: number;
-  inputTokens: number;
-  outputTokens: number;
-  cost: number;
-  model: string;
-  cwd: string;
-  branch: string | null;
+interface ModelRegistryLike {
+  getApiKeyForProvider?(provider: string): Promise<unknown> | unknown;
 }
 
 /* ───── Helpers ───── */
-
-function normalizeTurnRecord(value: unknown): TurnRecord | null {
-  if (!value || typeof value !== "object") return null;
-  const record = value as Partial<TurnRecord>;
-  const numbers = [
-    record.turnIndex,
-    record.inputTokens,
-    record.outputTokens,
-    record.cost,
-    record.durationMs,
-    record.tps,
-  ];
-  if (!numbers.every((number) => typeof number === "number" && Number.isFinite(number))) {
-    return null;
-  }
-  if (typeof record.model !== "string") return null;
-  return {
-    turnIndex: record.turnIndex!,
-    inputTokens: Math.max(0, record.inputTokens!),
-    outputTokens: Math.max(0, record.outputTokens!),
-    cost: Math.max(0, record.cost!),
-    durationMs: Math.max(0, record.durationMs!),
-    tps: Math.max(0, record.tps!),
-    model: record.model,
-  };
-}
-
-function scanHistoricalTurns(ctx: ExtensionContext): TurnRecord[] {
-  const turns: TurnRecord[] = [];
-  for (const entry of ctx.sessionManager.getBranch()) {
-    if (entry.type !== "custom" || entry.customType !== "obs-turn") continue;
-    const record = normalizeTurnRecord((entry as unknown as PersistedTurn).data);
-    if (record) turns.push(record);
-  }
-  return turns;
-}
-
-function getSessionStartTime(ctx: ExtensionContext): number {
-  const entries = ctx.sessionManager.getBranch();
-  for (const e of entries) {
-    if (typeof e.timestamp === "number" && Number.isFinite(e.timestamp)) {
-      return e.timestamp;
-    }
-  }
-  return Date.now();
-}
-
-function alignCell(str: string, width: number, align: "left" | "right" = "left"): string {
-  const vis = visibleWidth(str);
-  if (vis > width) return truncateToWidth(str, width);
-  const pad = width - vis;
-  return align === "right" ? " ".repeat(pad) + str : str + " ".repeat(pad);
-}
 
 function getStringProp(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const prop = (value as Record<string, unknown>)[key];
   return typeof prop === "string" ? prop : undefined;
-}
-
-function fitColumnWidths(headers: string[], rows: string[][], termWidth: number): number[] {
-  const widths = headers.map((header, index) =>
-    Math.max(1, visibleWidth(header), ...rows.map((row) => visibleWidth(row[index] ?? ""))),
-  );
-  const available = Math.max(1, termWidth - 2 - 2 * (widths.length - 1));
-  let total = widths.reduce((sum, width) => sum + width, 0);
-  while (total > available) {
-    let widest = -1;
-    for (let i = 0; i < widths.length; i++) {
-      if (widths[i]! > 1 && (widest < 0 || widths[i]! > widths[widest]!)) widest = i;
-    }
-    if (widest < 0) break;
-    widths[widest]!--;
-    total--;
-  }
-  return widths;
 }
 
 function getServiceTierFromPayload(payload: unknown): string | null {
@@ -196,152 +108,6 @@ function supportsFastMode(ctx: ExtensionContext): boolean {
   if (!model) return false;
   if (model.provider !== "openai" && model.provider !== "openai-codex") return false;
   return model.api === "openai-responses" || model.api === "openai-codex-responses";
-}
-
-/** `provider/model` when both are known, otherwise the bare model id. */
-function modelLabel(ctx: ExtensionContext): string {
-  const model = ctx.model;
-  if (!model) return "none";
-  const { id, provider } = model;
-  if (!id) return "none";
-  if (
-    provider &&
-    id !== provider &&
-    !id.startsWith(`${provider}/`) &&
-    !id.startsWith(`${provider}:`) &&
-    !id.startsWith(`${provider} `)
-  ) {
-    return `${provider}/${id}`;
-  }
-  return id;
-}
-
-/* ───── Dashboard formatting ───── */
-
-type DashboardTheme = Pick<PiTheme, "fg" | "bold">;
-
-function buildDashboard(
-  state: SessionState,
-  ctx: ExtensionContext,
-  branch: string | null,
-  history: SessionSummary[],
-  termWidth: number,
-  theme: DashboardTheme,
-): string[] {
-  const runtime = Date.now() - state.startTime;
-  const safeTermWidth = Math.max(1, Math.floor(termWidth));
-  if (safeTermWidth < 24) {
-    return [truncateToWidth("Obs", safeTermWidth)];
-  }
-
-  const totalIn = state.turns.reduce((s, t) => s + t.inputTokens, 0);
-  const totalOut = state.turns.reduce((s, t) => s + t.outputTokens, 0);
-  const totalCost = state.turns.reduce((s, t) => s + t.cost, 0);
-
-  const B = (s: string) => theme.fg("border", s);
-  const lines: string[] = [];
-
-  // ── Summary Card ──
-  const summaryLines = [
-    theme.bold("Agent Observability Dashboard"),
-    `Runtime: ${fmtDuration(runtime)}    Dir: ${shortenPath(ctx.cwd)}`,
-    branch
-      ? `Branch: ${branch}    Model: ${modelLabel(ctx)}`
-      : `Model: ${modelLabel(ctx)}`,
-    state.serviceTier
-      ? `Service tier: ${state.serviceTier}${state.fastModeEnabled ? " (fast)" : ""}`
-      : `Fast mode: ${state.fastModeSupported ? "available" : "not available"}`,
-    `Tokens: ↑${fmtTokens(totalIn)} ↓${fmtTokens(totalOut)}`,
-    `Cost: $${totalCost.toFixed(6)}`,
-  ];
-  const summaryW = Math.max(
-    4,
-    Math.min(Math.max(...summaryLines.map((c) => visibleWidth(c))) + 4, safeTermWidth),
-  );
-  const inner = summaryW - 4;
-  const padSummary = (text: string) => {
-    const safe = truncateToWidth(text, inner);
-    const vis = visibleWidth(safe);
-    const pad = Math.max(0, inner - vis);
-    return B("│ ") + safe + B(`${" ".repeat(pad)} │`);
-  };
-
-  lines.push(B(`┌${"─".repeat(summaryW - 2)}┐`));
-  lines.push(padSummary(summaryLines[0]));
-  lines.push(B(`├${"─".repeat(summaryW - 2)}┤`));
-  for (let i = 1; i < summaryLines.length; i++) {
-    lines.push(padSummary(summaryLines[i]));
-  }
-  lines.push(B(`└${"─".repeat(summaryW - 2)}┘`));
-
-  // ── Turns Table ──
-  if (state.turns.length > 0) {
-    lines.push("");
-    lines.push(`  ${theme.bold(theme.fg("accent", `TURNS  (${state.turns.length})`))}`);
-
-    const headers = ["#", "Input", "Output", "Time", "TPS", "Cost", "Model"];
-    const rows = state.turns.map((t, i) => [
-      `${i + 1}`,
-      `↑${fmtTokens(t.inputTokens)}`,
-      `↓${fmtTokens(t.outputTokens)}`,
-      fmtDuration(t.durationMs),
-      `${t.tps.toFixed(1)}`,
-      `$${t.cost.toFixed(2)}`,
-      t.model,
-    ]);
-
-    const colW = fitColumnWidths(headers, rows, safeTermWidth);
-
-    const pad = "  ";
-    const hdr = `  ${headers.map((h, i) => alignCell(h, colW[i]!)).join(pad)}`;
-    lines.push(theme.fg("dim", hdr));
-    lines.push(B(`  ${"─".repeat(visibleWidth(hdr) - 2)}`));
-    for (const row of rows) {
-      const cells = row.map((c, i) => alignCell(c, colW[i]!, i === 0 || i >= 3 ? "left" : "right"));
-      lines.push(`  ${cells.join(pad)}`);
-    }
-  }
-
-  // ── History Table ──
-  if (history.length > 0) {
-    lines.push("");
-    lines.push(`  ${theme.bold(theme.fg("accent", "LAST 10 SESSIONS"))}`);
-
-    const headers = ["When", "Duration", "Turns", "Input", "Output", "Cost", "Model"];
-    const rows = history
-      .slice(-10)
-      .reverse()
-      .map((h) => {
-        const date = new Date(h.endedAt).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        return [
-          date,
-          fmtDuration(h.runtimeMs),
-          `${h.turns}`,
-          `↑${fmtTokens(h.inputTokens)}`,
-          `↓${fmtTokens(h.outputTokens)}`,
-          `$${h.cost.toFixed(2)}`,
-          h.model,
-        ];
-      });
-
-    const colW = fitColumnWidths(headers, rows, safeTermWidth);
-
-    const pad = "  ";
-    const hdr = `  ${headers.map((h, i) => alignCell(h, colW[i]!)).join(pad)}`;
-    lines.push(theme.fg("dim", hdr));
-    lines.push(B(`  ${"─".repeat(visibleWidth(hdr) - 2)}`));
-    for (const row of rows) {
-      const cells = row.map((c, i) => alignCell(c, colW[i]!, i === 0 || i >= 2 ? "left" : "right"));
-      lines.push(`  ${cells.join(pad)}`);
-    }
-  }
-
-  return lines;
 }
 
 /* ───── Extension ───── */
@@ -369,30 +135,8 @@ export default function (pi: ExtensionAPI) {
     fastModeSupported: false,
     fastModeEnabled: false,
     serviceTier: null,
-    showFullPath: false,
     quotaUsage: null,
-    settings: {
-      version: 1,
-      preset: "standard",
-      segments: {
-        modelThink: true,
-        provider: true,
-        runtime: true,
-        pwd: true,
-        git: true,
-        contextUsage: true,
-        contextProgress: true,
-        contextPercentage: true,
-        contextNumbers: true,
-        tokens: true,
-        tps: true,
-        cost: true,
-        cache: true,
-        turnCount: false,
-        usageBars: true,
-      },
-      contextZones: { expert: 70, warning: 85 },
-    },
+    settings: createDefaultSettings(),
   };
 
   async function refreshQuota(ctx: ExtensionContext): Promise<void> {
@@ -410,7 +154,7 @@ export default function (pi: ExtensionAPI) {
     let apiKey: string | undefined;
     if (provider === "cline-pass" || provider === "umans" || provider === "openference") {
       try {
-        const registry = (ctx as any).modelRegistry;
+        const registry = (ctx as ExtensionContext & { modelRegistry?: ModelRegistryLike }).modelRegistry;
         const resolved = await registry?.getApiKeyForProvider?.(provider);
         if (typeof resolved === "string") apiKey = resolved;
       } catch {
@@ -431,16 +175,14 @@ export default function (pi: ExtensionAPI) {
   /* ─── Lifecycle ─── */
 
   pi.on("session_start", async (_event, ctx) => {
-    state.startTime = getSessionStartTime(ctx);
-    state.turns = scanHistoricalTurns(ctx);
+    state.startTime = Date.now();
+    state.turns = [];
     state.currentTurnStartTime = null;
     state.currentTurnFirstTokenTime = null;
     state.currentTurnUpdateCount = 0;
     state.currentTurnOutputTokens = 0;
     state.totalCacheRead = 0;
-    // Resume the turn counter from the repopulated history so the footer's #N
-    // continues from where the prior session left off rather than restarting at 1.
-    state.turnNumber = state.turns.length;
+    state.turnNumber = 0;
     state.agentStartTime = null;
     state.isStreaming = false;
     state.fastModeSupported = supportsFastMode(ctx);
@@ -453,8 +195,10 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) ctx.ui.notify("Observability settings unavailable; using defaults", "warning");
     }
     state.quotaUsage = null;
-    state.showFullPath = process.env.PI_OBS_SHOW_FULL_PATH === "1" ||
-      process.env.PI_OBS_SHOW_FULL_PATH === "true";
+    const envPath = process.env.PI_OBS_SHOW_FULL_PATH?.trim().toLowerCase();
+    if (envPath === "1" || envPath === "true") {
+      state.settings = { ...state.settings, showFullPath: true };
+    }
 
     if (state.footerEnabled && ctx.mode === "tui") {
       setupFooter(ctx);
@@ -503,7 +247,7 @@ export default function (pi: ExtensionAPI) {
 
     // Track actual output token count during streaming for live tok/s.
     // The event may carry partial usage from the accumulating assistant message.
-    const msg = (event as any).message as AssistantMessage | undefined;
+    const msg = event.message as AssistantMessage | undefined;
     if (msg?.usage?.output !== undefined && Number.isFinite(msg.usage.output)) {
       state.currentTurnOutputTokens = Math.max(
         state.currentTurnOutputTokens,
@@ -552,7 +296,6 @@ export default function (pi: ExtensionAPI) {
     const tps = safeGenDuration > 0 ? safeOutputTokens / (safeGenDuration / 1000) : 0;
 
     const record: TurnRecord = {
-      turnIndex: event.turnIndex,
       inputTokens: safeInputTokens,
       outputTokens: safeOutputTokens,
       cost: safeCost,
@@ -567,7 +310,6 @@ export default function (pi: ExtensionAPI) {
     state.currentTurnFirstTokenTime = null;
     state.currentTurnUpdateCount = 0;
 
-    pi.appendEntry("obs-turn", record);
   });
 
   pi.on("agent_end", async (event, ctx) => {
@@ -602,48 +344,13 @@ export default function (pi: ExtensionAPI) {
     const elapsedSeconds = elapsedMs / 1000;
     const tokensPerSecond = output / elapsedSeconds;
     ctx.ui.notify(
-      `TPS ${tokensPerSecond.toFixed(1)} tok/s. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`,
+      `Run throughput ${tokensPerSecond.toFixed(1)} tok/s. out ${output.toLocaleString()}, in ${input.toLocaleString()}, cache r/w ${cacheRead.toLocaleString()}/${cacheWrite.toLocaleString()}, total ${totalTokens.toLocaleString()}, ${elapsedSeconds.toFixed(1)}s`,
       "info",
     );
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
     if (ctx.mode === "tui") teardownFooter(ctx);
-
-    const totalIn = state.turns.reduce((s, t) => s + t.inputTokens, 0);
-    const totalOut = state.turns.reduce((s, t) => s + t.outputTokens, 0);
-    const totalCost = state.turns.reduce((s, t) => s + t.cost, 0);
-    const runtime = Date.now() - state.startTime;
-
-    let branch: string | null = null;
-    try {
-      const result = await pi.exec("git", ["branch", "--show-current"], {
-        cwd: ctx.cwd,
-      });
-      branch = result.stdout?.trim() || null;
-    } catch {
-      branch = null;
-    }
-
-    const summary: SessionSummary = {
-      endedAt: Date.now(),
-      runtimeMs: runtime,
-      turns: state.turns.length,
-      inputTokens: totalIn,
-      outputTokens: totalOut,
-      cost: totalCost,
-      model: ctx.model?.id ?? "unknown",
-      cwd: ctx.cwd,
-      branch,
-    };
-
-    const historyStore = storage.jsonl<SessionSummary>("history");
-    try {
-      await historyStore.append(summary);
-      await historyStore.trim({ keepLast: 200 });
-    } catch {
-      if (ctx.hasUI) ctx.ui.notify("Could not save observability session history", "warning");
-    }
   });
 
   /* ─── Footer ─── */
@@ -652,24 +359,28 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setFooter((tui, theme, footerData) => {
       requestFooterRender = () => tui.requestRender();
       // Register re-fetch callback for failover account rotation.
-      (globalThis as any).__opencode_go_trigger_refresh = () => {
+      const unregisterQuotaRefresh = registerOpencodeGoRefresh(() => {
         void refreshQuota(ctx).finally(() => tui.requestRender());
-      };
+      });
       let diffAdded = 0;
       let diffRemoved = 0;
+      let gitDirty = false;
 
       let diffRefreshInFlight = false;
       async function refreshDiff() {
         if (diffRefreshInFlight) return;
         diffRefreshInFlight = true;
         try {
-          const result = await pi.exec("git", ["diff", "HEAD", "--numstat"], {
-            cwd: ctx.cwd,
-          });
-          if (result.code === 0 && result.stdout) {
-            let added = 0;
-            let removed = 0;
-            for (const line of result.stdout.split("\n")) {
+          const [diffResult, statusResult] = await Promise.all([
+            pi.exec("git", ["diff", "HEAD", "--numstat"], { cwd: ctx.cwd }),
+            pi.exec("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
+              cwd: ctx.cwd,
+            }),
+          ]);
+          let added = 0;
+          let removed = 0;
+          if (diffResult.code === 0 && diffResult.stdout) {
+            for (const line of diffResult.stdout.split("\n")) {
               const parts = line.trim().split(/\s+/);
               if (parts.length >= 2) {
                 const a = parseInt(parts[0], 10);
@@ -678,15 +389,14 @@ export default function (pi: ExtensionAPI) {
                 if (Number.isFinite(b)) removed += b;
               }
             }
-            diffAdded = added;
-            diffRemoved = removed;
-          } else {
-            diffAdded = 0;
-            diffRemoved = 0;
           }
+          diffAdded = added;
+          diffRemoved = removed;
+          gitDirty = statusResult.code === 0 && statusResult.stdout.trim().length > 0;
         } catch {
           diffAdded = 0;
           diffRemoved = 0;
+          gitDirty = false;
         } finally {
           diffRefreshInFlight = false;
           tui.requestRender();
@@ -710,7 +420,7 @@ export default function (pi: ExtensionAPI) {
 
       return {
         dispose() {
-          (globalThis as any).__opencode_go_trigger_refresh = undefined;
+          unregisterQuotaRefresh();
           unsubBranch();
           clearInterval(timer);
           clearInterval(quotaTimer);
@@ -750,8 +460,9 @@ export default function (pi: ExtensionAPI) {
             serviceTier: state.serviceTier,
             contextUsage: ctx.getContextUsage() ?? null,
             cwd: ctx.cwd,
-            showFullPath: state.showFullPath,
+            showFullPath: state.settings.showFullPath === true,
             gitBranch: footerData.getGitBranch(),
+            gitDirty,
             gitDiffAdded: diffAdded,
             gitDiffRemoved: diffRemoved,
             settings: state.settings,
@@ -780,59 +491,50 @@ export default function (pi: ExtensionAPI) {
 
   /* ─── Commands ─── */
 
-  pi.registerCommand("obs", {
-    description: "Show observability dashboard (tokens, cost, TPS, runtime, history)",
-    handler: async (_args, ctx) => {
-      if (ctx.mode !== "tui") return;
-      const branchResult = await pi.exec("git", ["branch", "--show-current"], {
-        cwd: ctx.cwd,
-      });
-      const branch = branchResult.stdout?.trim() || null;
-      const history = await storage.jsonl<SessionSummary>("history").read({ last: 10 });
+  const footerMenuOptions = [
+    "Toggle footer",
+    "Toggle path display",
+    "Open settings",
+  ];
 
-      await ctx.ui.custom<void>((_tui, theme, _kb, done) => {
-        let cachedWidth = 0;
-        let cachedLines: string[] = [];
+  async function handleFooter(args: string, ctx: ExtensionCommandContext): Promise<void> {
+    const action = args.trim().toLowerCase();
+    if (!action || action === "menu") {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("Footer menu requires interactive mode", "error");
+        return;
+      }
+      const choice = await ctx.ui.select("Footer", footerMenuOptions);
+      switch (choice) {
+        case "Toggle footer":
+          await handleToggle("", ctx);
+          break;
+        case "Toggle path display":
+          await handleTogglePath("", ctx);
+          break;
+        case "Open settings":
+          await handleSettings("", ctx);
+          break;
+      }
+      return;
+    }
 
-        return {
-          invalidate() {
-            cachedWidth = 0;
-            cachedLines = [];
-          },
-          handleInput(data: string) {
-            if (
-              matchesKey(data, Key.escape) ||
-              matchesKey(data, Key.enter) ||
-              matchesKey(data, Key.space)
-            ) {
-              done();
-            }
-          },
-          render(width: number): string[] {
-            if (cachedWidth === width && cachedLines.length > 0) {
-              return cachedLines;
-            }
+    switch (action) {
+      case "toggle":
+        await handleToggle("", ctx);
+        return;
+      case "path":
+        await handleTogglePath("", ctx);
+        return;
+      case "settings":
+        await handleSettings("", ctx);
+        return;
+      default:
+        ctx.ui.notify("Usage: /footer [menu|toggle|path|settings]", "error");
+    }
+  }
 
-            cachedLines = buildDashboard(state, ctx, branch, history, width, theme);
-
-            // Add hint at bottom
-            const hint = theme.fg("dim", "Press ESC or Enter to close");
-            const hintVisible = visibleWidth(hint);
-            const pad = Math.max(0, width - hintVisible);
-            cachedLines.push("");
-            cachedLines.push(hint + " ".repeat(pad));
-
-            cachedWidth = width;
-            return cachedLines;
-          },
-        };
-      });
-    },
-  });
-
-  pi.registerCommand("obs-toggle", {
-    description: "Toggle the observability footer on/off",
-    handler: async (_args, ctx) => {
+  async function handleToggle(_args: string, ctx: ExtensionCommandContext): Promise<void> {
       if (ctx.mode !== "tui") return;
       state.footerEnabled = !state.footerEnabled;
       if (state.footerEnabled) {
@@ -842,22 +544,24 @@ export default function (pi: ExtensionAPI) {
         teardownFooter(ctx);
         ctx.ui.notify("Observability footer disabled", "info");
       }
-    },
-  });
+  }
 
-  pi.registerCommand("obs-toggle-path", {
-    description: "Toggle between folder name and full path in footer",
-    handler: async (_args, ctx) => {
+  async function handleTogglePath(_args: string, ctx: ExtensionCommandContext): Promise<void> {
       if (ctx.mode !== "tui") return;
-      state.showFullPath = !state.showFullPath;
-      const mode = state.showFullPath ? "full path" : "folder name";
+      state.settings = {
+        ...state.settings,
+        showFullPath: state.settings.showFullPath !== true,
+      };
+      try {
+        await saveSettings(state.settings, storage);
+      } catch {
+        ctx.ui.notify("Could not save footer path setting", "warning");
+      }
+      const mode = state.settings.showFullPath ? "full path" : "folder name";
       ctx.ui.notify(`Footer path: ${mode}`, "info");
-    },
-  });
+  }
 
-  pi.registerCommand("obs-settings", {
-    description: "Open status bar settings (layout presets, segment toggles, context zones)",
-    handler: async (_args, ctx) => {
+  async function handleSettings(_args: string, ctx: ExtensionCommandContext): Promise<void> {
       if (ctx.mode !== "tui") {
         ctx.ui.notify("Settings UI requires interactive mode", "error");
         return;
@@ -921,6 +625,17 @@ export default function (pi: ExtensionAPI) {
           },
         };
       });
+  }
+
+  pi.registerCommand("footer", {
+    description: "Footer actions: menu, toggle, path, settings",
+    getArgumentCompletions: (prefix) => {
+      const value = prefix.trim().toLowerCase();
+      const options = ["menu", "toggle", "path", "settings"];
+      return options
+        .filter((option) => option.startsWith(value))
+        .map((option) => ({ value: option, label: option }));
     },
+    handler: handleFooter,
   });
 }

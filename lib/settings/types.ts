@@ -22,6 +22,8 @@ export interface SettingsConfig {
   preset: PresetName;
   segments: Record<SegmentKey, boolean>;
   contextZones: { expert: number; warning: number };
+  /** Show the abbreviated home-relative full path instead of the basename. */
+  showFullPath?: boolean;
 }
 
 export interface SettingsListItem {

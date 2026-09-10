@@ -26,8 +26,8 @@ import { join } from "node:path";
 
 /**
  * Resolve the pi agent data dir, honoring PI_CODING_AGENT_DIR the same way
- * pi's auth layer does. Observability history and settings live alongside
- * auth.json so a custom agent dir carries them too.
+ * pi's auth layer does. Observability settings live alongside auth.json so a
+ * custom agent dir carries them too.
  */
 export function getAgentDir(): string {
   return process.env.PI_CODING_AGENT_DIR?.trim() || join(homedir(), ".pi", "agent");

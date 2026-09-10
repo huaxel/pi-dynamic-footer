@@ -14,13 +14,14 @@ export const DEFAULT_SETTINGS: SettingsConfig = {
     contextPercentage: true,
     contextNumbers: true,
     tokens: true,
-    tps: true,
+    tps: false,
     cost: true,
     cache: true,
     turnCount: false,
     usageBars: true,
   },
   contextZones: { expert: 70, warning: 85 },
+  showFullPath: false,
 };
 
 export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> = {
@@ -29,7 +30,7 @@ export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> =
     provider: false,
     contextUsage: true,
     contextProgress: true,
-    contextPercentage: false,
+    contextPercentage: true,
     contextNumbers: true,
     runtime: false,
     pwd: false,
@@ -39,7 +40,7 @@ export const PRESETS: Record<PresetName, Partial<Record<SegmentKey, boolean>>> =
     cost: false,
     cache: false,
     turnCount: false,
-    usageBars: true,
+    usageBars: false,
   },
   standard: {
     modelThink: true,

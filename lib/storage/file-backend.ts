@@ -31,12 +31,17 @@ export function createFileBackend(options: FileBackendOptions): RawBackend {
 
     let acquired = false;
     for (let attempt = 0; attempt < LOCK_TIMEOUT_MS / LOCK_RETRY_MS; attempt++) {
+      let created = false;
       try {
         await mkdir(lockPath);
+        created = true;
         await writeFile(ownerPath, owner, "utf8");
         acquired = true;
         break;
       } catch (error) {
+        if (created) {
+          await rm(lockPath, { recursive: true, force: true }).catch(() => undefined);
+        }
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
         try {
           const heartbeatPath = join(lockPath, "owner");

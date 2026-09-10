@@ -25,6 +25,13 @@ export function toSettingsListItems(config: SettingsConfig): SettingsListItem[] 
 
   items.push(
     {
+      id: "showFullPath",
+      label: "Full Working Directory Path",
+      description: "Show the home-relative full path instead of only the folder name",
+      currentValue: config.showFullPath ? "true" : "false",
+      values: ["true", "false"],
+    },
+    {
       id: "expertZone",
       label: "Expert Zone Threshold",
       description: "Context usage % at or below which the bar is green; above it turns yellow (0-100)",

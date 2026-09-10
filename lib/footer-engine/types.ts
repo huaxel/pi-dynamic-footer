@@ -1,28 +1,11 @@
 import type { ContextUsage, Theme as PiTheme } from "@earendil-works/pi-coding-agent";
 
 import type { QuotaSnapshot } from "../quota-provider.ts";
+import type { SegmentKey, SettingsConfig } from "../settings/types.js";
 
-export type SegmentKey =
-  | "modelThink"
-  | "provider"
-  | "runtime"
-  | "pwd"
-  | "git"
-  | "contextUsage"
-  | "contextProgress"
-  | "contextPercentage"
-  | "contextNumbers"
-  | "tokens"
-  | "tps"
-  | "cost"
-  | "cache"
-  | "turnCount"
-  | "usageBars";
+export type { SegmentKey } from "../settings/types.js";
 
-export interface FooterSettings {
-  segments: Record<SegmentKey, boolean>;
-  contextZones: { expert: number; warning: number };
-}
+export type FooterSettings = Pick<SettingsConfig, "segments" | "contextZones">;
 
 export interface FooterInput {
   model: string;
@@ -48,6 +31,8 @@ export interface FooterInput {
   cwd: string;
   showFullPath: boolean;
   gitBranch: string | null;
+  /** True when git reports any tracked or untracked working-tree change. */
+  gitDirty?: boolean;
   gitDiffAdded: number;
   gitDiffRemoved: number;
   settings: FooterSettings;

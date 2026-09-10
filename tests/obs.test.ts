@@ -4,13 +4,14 @@ import { tmpdir, homedir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { fmtTokens, shortenPath } from "../lib/footer-engine/format.js";
-import { defaultAssembler } from "../lib/footer-engine/layout.js";
+import { fmtTokens, rainbowText, shortenPath } from "../lib/footer-engine/format.js";
+import { createFooterEngine, defaultAssembler } from "../lib/footer-engine/index.js";
 import { builtinRenderers } from "../lib/footer-engine/segments.js";
-import { createDefaultSettings, setZone, updateSetting, validateSettings } from "../lib/settings/domain.js";
+import { applyPreset, createDefaultSettings, setZone, updateSetting, validateSettings } from "../lib/settings/domain.js";
 import { createFileBackend } from "../lib/storage/file-backend.js";
 import { createMemoryBackend } from "../lib/storage/memory-backend.js";
 import { getAgentDir, getDefaultObservabilityDir } from "../lib/storage/index.js";
+import { createMemorySettingsStorage, createSettingsManager } from "../lib/settings/index.js";
 import {
   parseOpenCodeGoDashboard,
   resolveAuthValue,
@@ -24,6 +25,23 @@ test("fmtTokens handles invalid and negative values", () => {
   assert.equal(fmtTokens(Number.NaN), "0");
   assert.equal(fmtTokens(-1_250), "-1.3k");
   assert.equal(fmtTokens(1_250_000), "1.25M");
+  assert.equal(fmtTokens(999_999), "1.00M");
+});
+
+test("rainbowText never emits raw ANSI and supports themed colorizers", () => {
+  assert.equal(rainbowText("xhigh"), "xhigh");
+  assert.equal(rainbowText("ab", (character, index) => `${index}:${character}`), "0:a1:b");
+});
+
+test("default and minimal presets match their documented TPS and percentage settings", () => {
+  const defaults = createDefaultSettings();
+  assert.equal(defaults.preset, "standard");
+  assert.equal(defaults.segments.tps, false);
+
+  const minimal = applyPreset(defaults, "minimal");
+  assert.equal(minimal.segments.tps, false);
+  assert.equal(minimal.segments.contextPercentage, true);
+  assert.equal(minimal.segments.usageBars, false);
 });
 
 test("shortenPath does not rewrite a sibling path", () => {
@@ -54,6 +72,9 @@ test("settings reject invalid zones and persist context dependencies", () => {
     contextZones: { expert: 70, warning: 85 },
   }, "expert", Number.NaN);
   assert.equal(config.contextZones.expert, 70);
+
+  const pathResult = updateSetting(config, "showFullPath", "true");
+  assert.equal(pathResult.config.showFullPath, true);
 
   const result = updateSetting(config, "contextUsage", "false");
   assert.equal(result.config.segments.contextProgress, false);
@@ -196,7 +217,8 @@ test("cache segment shows hit percentage and hides when zero", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
   const withHit = builtinRenderers.cache!({
     totalCacheRead: 700,
-    totalOutputTokens: 300,
+    totalInputTokens: 300,
+    totalOutputTokens: 9_999,
     theme,
   } as never);
   assert.match(withHit, /cache 70%/);
@@ -213,6 +235,70 @@ test("turn counter shows current turn number", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
   const rendered = builtinRenderers.turnCount!({ turnNumber: 12, theme } as never);
   assert.match(rendered, /#12/);
+});
+
+test("git segment marks untracked changes as dirty", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.git!({
+    gitBranch: "main",
+    gitDirty: true,
+    gitDiffAdded: 0,
+    gitDiffRemoved: 0,
+    theme,
+  } as never);
+  assert.equal(rendered, "main");
+});
+
+test("footer engine applies custom segment renderers", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const settings = createDefaultSettings();
+  const engine = createFooterEngine({
+    segments: { modelThink: () => "custom-model" },
+  });
+  const lines = engine.render({
+    model: "model",
+    provider: "provider",
+    thinkingLevel: "medium",
+    runtimeMs: 1_000,
+    isStreaming: false,
+    currentTurnStartTime: null,
+    currentTurnFirstTokenTime: null,
+    currentTurnUpdateCount: 0,
+    lastTurnTps: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalCost: 0,
+    totalCacheRead: 0,
+    currentTurnOutputTokens: 0,
+    turnNumber: 1,
+    fastModeSupported: false,
+    fastModeEnabled: false,
+    serviceTier: null,
+    contextUsage: null,
+    cwd: "/tmp",
+    showFullPath: false,
+    gitBranch: null,
+    gitDiffAdded: 0,
+    gitDiffRemoved: 0,
+    settings,
+    theme,
+    quotaUsage: null,
+  }, 100);
+  assert.match(lines[0]!, /custom-model/);
+});
+
+test("settings manager persists changes through storage", async () => {
+  const storage = createMemorySettingsStorage();
+  const manager = createSettingsManager(storage);
+  await manager.load();
+  manager.setSegment("usageBars", false);
+  manager.setZone("warning", 90);
+  await manager.save();
+
+  const reloaded = createSettingsManager(storage);
+  await reloaded.load();
+  assert.equal(reloaded.getConfig().segments.usageBars, false);
+  assert.equal(reloaded.getConfig().contextZones.warning, 90);
 });
 
 test("provider segment shows the provider name and hides when unknown", () => {
@@ -344,7 +430,8 @@ test("normalizePercent scales 0..1 fractions to percentages", () => {
 
 /* ───── formatResetTime ───── */
 
-test("formatResetTime renders past, minutes, hours, and days", () => {
+test("formatResetTime rejects invalid dates and renders time buckets", () => {
+  assert.equal(formatResetTime(new Date("invalid")), "unknown");
   const now = Date.now();
   // Add a small slack to future boundaries so a few ms of Date.now() drift
   // between the snapshot and formatResetTime's internal call can't drop the
@@ -406,6 +493,7 @@ test("validateSettings rejects unknown presets and falls back to standard", () =
     contextZones: { expert: 70, warning: 85 },
   });
   assert.equal(cfg.preset, "standard");
+  assert.equal(cfg.showFullPath, false);
 });
 
 /* ───── agent dir resolution ───── */

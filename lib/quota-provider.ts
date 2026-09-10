@@ -19,6 +19,7 @@ import { authCredential, loadAuthJson, resolveAuthValue } from "@juanbenjumea/op
 import { fetchCommandCodeUsage } from "@juanbenjumea/opencode-go-usage/commandcode.ts";
 import { fetchCursorUsage } from "@juanbenjumea/opencode-go-usage/cursor.ts";
 import { fetchOpenferenceUsage } from "@juanbenjumea/opencode-go-usage/openference.ts";
+import { readOpencodeGoQuotaState } from "./opencode-go-integration.ts";
 
 /* ───── Types ───── */
 
@@ -45,6 +46,7 @@ export interface QuotaFetchOptions {
 type JsonObject = Record<string, any>;
 
 function formatResetTime(date: Date): string {
+  if (!Number.isFinite(date.getTime())) return "unknown";
   const diffMs = date.getTime() - Date.now();
   if (diffMs <= 0) return "now";
 
@@ -188,10 +190,11 @@ async function fetchClaudeUsage(): Promise<QuotaSnapshot> {
     });
     const windows: QuotaWindow[] = [];
     const addWindow = (source: any, label: string) => {
-      if (source?.utilization === undefined) return;
+      const utilization = Number(source?.utilization);
+      if (!Number.isFinite(utilization)) return;
       windows.push({
         label,
-        usedPercent: normalizePercent(Number(source.utilization)),
+        usedPercent: normalizePercent(utilization),
         resetsIn: source.resets_at ? formatResetTime(new Date(source.resets_at)) : undefined,
       });
     };
@@ -248,9 +251,11 @@ async function fetchCodexUsage(): Promise<QuotaSnapshot> {
     ] as const) {
       if (!window) continue;
       const resetAt = typeof window.reset_at === "number" ? new Date(window.reset_at * 1000) : undefined;
+      const usedPercent = Number(window.used_percent);
+      if (!Number.isFinite(usedPercent)) continue;
       windows.push({
         label,
-        usedPercent: clampPercent(Number(window.used_percent ?? 0)),
+        usedPercent: clampPercent(usedPercent),
         resetsIn: resetAt ? formatResetTime(resetAt) : formatResetSeconds(Number(window.reset_after_seconds)),
       });
     }
@@ -362,9 +367,9 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
 
     if (results.length > 0) {
       // Prefer the account the failover extension is actively using.
-      const activeLabel = (globalThis as any).__opencode_go_active_label;
-      const active = activeLabel
-        ? results.find((r) => r.label === activeLabel)
+      const coordination = readOpencodeGoQuotaState();
+      const active = coordination.activeLabel
+        ? results.find((r) => r.label === coordination.activeLabel)
         : null;
       // Otherwise pick the account with the lowest rolling usage.
       const chosen =
@@ -376,12 +381,7 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
 
       // All accounts on cooldown: surface the failover extension's state as a
       // full Cooldown bar with the earliest reset countdown.
-      const g = globalThis as Record<string, unknown>;
-      const allExhausted = g.__opencode_go_all_exhausted === true;
-      const earliest =
-        typeof g.__opencode_go_earliest_reset === "number"
-          ? (g.__opencode_go_earliest_reset as number)
-          : undefined;
+      const { allExhausted, earliestReset: earliest } = coordination;
       if (allExhausted && earliest !== undefined) {
         windows.push({
           label: "Cooldown",
@@ -404,8 +404,8 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
 
   // Fall back to single-account quota-status config.
   const quotaCfg = auth["quota-status"]?.["opencode-go"];
-  const workspaceId = typeof quotaCfg?.workspaceId === "string" ? quotaCfg.workspaceId.trim() : "";
-  const authCookie = typeof quotaCfg?.authCookie === "string" ? quotaCfg.authCookie.trim() : "";
+  const workspaceId = resolveAuthValue(quotaCfg?.workspaceId)?.trim() || "";
+  const authCookie = resolveAuthValue(quotaCfg?.authCookie)?.trim() || "";
   if (!workspaceId || !authCookie) {
     return { provider: "opencode-go", windows: [], error: "no-auth", fetchedAt: Date.now() };
   }
@@ -450,7 +450,8 @@ function clineWindow(
   durationMs: number,
   limitUnits: number,
   items: ClineUsageItem[],
-): QuotaWindow {
+): QuotaWindow | null {
+  if (!Number.isFinite(limitUnits) || limitUnits <= 0) return null;
   const start = now - durationMs;
   let usedUnits = 0;
   let oldest: number | undefined;
@@ -510,7 +511,7 @@ async function fetchClineUsage(apiKey: string): Promise<QuotaSnapshot> {
         clineWindow(now, "5h", 5 * 60 * 60 * 1000, Number(threshold.last5HoursUsageCostUSDPerUser), items),
         clineWindow(now, "Week", 7 * 24 * 60 * 60 * 1000, Number(threshold.last7daysUsageCostUSDPerUser), items),
         clineWindow(now, "Month", 30 * 24 * 60 * 60 * 1000, Number(threshold.last30daysUsageCostUSDPerUser), items),
-      ],
+      ].filter((window): window is QuotaWindow => window !== null),
       fetchedAt: now,
     };
   } catch (error) {
@@ -570,17 +571,22 @@ async function fetchCopilotUsage(): Promise<QuotaSnapshot> {
 
     if (data.quota_snapshots?.premium_interactions) {
       const pi = data.quota_snapshots.premium_interactions;
-      const usedPercent = clampPercent(100 - (pi.percent_remaining || 0));
-      windows.push({ label: "Premium", usedPercent, resetsIn });
+      const remaining = Number(pi.percent_remaining);
+      if (Number.isFinite(remaining)) {
+        windows.push({ label: "Premium", usedPercent: clampPercent(100 - remaining), resetsIn });
+      }
     }
 
     if (data.quota_snapshots?.chat && !data.quota_snapshots.chat.unlimited) {
       const chat = data.quota_snapshots.chat;
-      windows.push({
-        label: "Chat",
-        usedPercent: clampPercent(100 - (chat.percent_remaining || 0)),
-        resetsIn,
-      });
+      const remaining = Number(chat.percent_remaining);
+      if (Number.isFinite(remaining)) {
+        windows.push({
+          label: "Chat",
+          usedPercent: clampPercent(100 - remaining),
+          resetsIn,
+        });
+      }
     }
 
     return { provider: "Copilot", windows, fetchedAt: Date.now() };
@@ -628,8 +634,10 @@ async function fetchGeminiUsage(): Promise<QuotaSnapshot> {
     // Track min remaining fraction per model, plus the associated reset time
     const quotas: Record<string, { frac: number; resetTime?: string }> = {};
     for (const bucket of data.buckets || []) {
-      const model = bucket.modelId || "unknown";
-      const frac = bucket.remainingFraction ?? 1;
+      const model = typeof bucket.modelId === "string" ? bucket.modelId : "unknown";
+      const remainingFraction = Number(bucket.remainingFraction);
+      if (!Number.isFinite(remainingFraction)) continue;
+      const frac = Math.max(0, Math.min(1, remainingFraction));
       const existing = quotas[model];
       if (!existing || frac < existing.frac) {
         quotas[model] = { frac, resetTime: bucket.resetTime || bucket.reset_time };
@@ -689,9 +697,9 @@ async function fetchKimiUsage(): Promise<QuotaSnapshot> {
     const windows: QuotaWindow[] = [];
 
     for (const limit of data.limits || []) {
-      const windowLimit = Number(limit.detail?.limit) || 0;
-      const windowRemaining = Number(limit.detail?.remaining) || 0;
-      if (windowLimit > 0) {
+      const windowLimit = Number(limit.detail?.limit);
+      const windowRemaining = Number(limit.detail?.remaining);
+      if (Number.isFinite(windowLimit) && windowLimit > 0 && Number.isFinite(windowRemaining)) {
         const used = windowLimit - windowRemaining;
         const usedPercent = clampPercent((used / windowLimit) * 100);
         const resetDate = limit.detail?.resetTime ? new Date(limit.detail.resetTime) : undefined;
@@ -707,10 +715,10 @@ async function fetchKimiUsage(): Promise<QuotaSnapshot> {
       }
     }
 
-    const weeklyLimit = Number(data.usage?.limit) || 0;
-    const weeklyRemaining = Number(data.usage?.remaining) || 0;
+    const weeklyLimit = Number(data.usage?.limit);
+    const weeklyRemaining = Number(data.usage?.remaining);
     const weeklyResetTime = data.usage?.resetTime;
-    if (weeklyLimit > 0) {
+    if (Number.isFinite(weeklyLimit) && weeklyLimit > 0 && Number.isFinite(weeklyRemaining)) {
       const used = weeklyLimit - weeklyRemaining;
       const usedPercent = clampPercent((used / weeklyLimit) * 100);
       windows.push({
@@ -794,7 +802,17 @@ export async function fetchQuota(piProvider: string, options: QuotaFetchOptions 
 
   const fetcher = FETCHERS[key];
   if (!fetcher) return null;
-  const result = await fetcher(options);
+  let result: QuotaSnapshot;
+  try {
+    result = await fetcher(options);
+  } catch (error) {
+    result = {
+      provider: key,
+      windows: [],
+      error: safeError(error),
+      fetchedAt: Date.now(),
+    };
+  }
   if (cacheKey) {
     cache.set(cacheKey, result);
     // Prune after inserting so the cache never exceeds the cap (a bounded,

@@ -1,12 +1,13 @@
 {
   "name": "@juanbenjumea/pi-dynamic-footer",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Dynamic configurable footer for pi with live observability: context gauge, TPS, token/cost tracking, subscription usage bars, git status, and a full settings UI.",
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "pretest": "node ./tests/prepare-workspace-dependency.mjs",
     "test": "node --import ./tests/resolve-hook.mjs --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --skipLibCheck index.ts observability.ts"
+    "typecheck": "tsc --noEmit --strict --allowImportingTsExtensions --moduleResolution bundler --module esnext --target esnext --skipLibCheck index.ts observability.ts lib/quota-provider.ts lib/footer-engine/*.ts lib/settings/*.ts lib/storage/*.ts"
   },
   "author": "Juan Benjumea",
   "keywords": [
@@ -21,12 +22,13 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/huaxel/pi-dynamic-footer"
+    "url": "git+https://github.com/juanbenjumea/dotfiles.git",
+    "directory": "pi/packages/pi-dynamic-footer"
   },
   "bugs": {
-    "url": "https://github.com/huaxel/pi-dynamic-footer/issues"
+    "url": "https://github.com/juanbenjumea/dotfiles/issues"
   },
-  "homepage": "https://github.com/huaxel/pi-dynamic-footer#readme",
+  "homepage": "https://github.com/juanbenjumea/dotfiles/tree/main/pi/packages/pi-dynamic-footer#readme",
   "engines": {
     "node": ">=20.0.0"
   },

@@ -15,7 +15,9 @@ export function fmtTokens(n: number): string {
   if (!Number.isFinite(n)) return "0";
   const sign = n < 0 ? "-" : "";
   const value = Math.abs(n);
-  if (value >= 1_000_000) return `${sign}${(value / 1_000_000).toFixed(2)}M`;
+  // Promote values that would round to 1000.0k so the display never crosses
+  // the unit boundary awkwardly.
+  if (value >= 999_950) return `${sign}${(value / 1_000_000).toFixed(2)}M`;
   if (value >= 1_000) return `${sign}${(value / 1_000).toFixed(1)}k`;
   return `${n}`;
 }
@@ -53,20 +55,16 @@ export function contextUsageColor(pct: number, expert: number, warning: number):
   return "error";
 }
 
-export function rainbowText(text: string): string {
-  const colors = [
-    "\x1b[38;2;255;0;0m", // red
-    "\x1b[38;2;255;127;0m", // orange
-    "\x1b[38;2;255;255;0m", // yellow
-    "\x1b[38;2;0;255;0m", // green
-    "\x1b[38;2;0;255;255m", // cyan
-    "\x1b[38;2;0;0;255m", // blue
-    "\x1b[38;2;255;0;255m", // magenta
-  ];
-  let result = "";
-  for (let i = 0; i < text.length; i++) {
-    result += colors[i % colors.length] + text[i];
-  }
-  result += "\x1b[0m";
-  return result;
+/**
+ * Apply a caller-provided colorizer one character at a time.
+ *
+ * The default is deliberately unstyled: this helper must never emit raw ANSI
+ * sequences because the TUI theme owns terminal styling.
+ */
+export function rainbowText(
+  text: string,
+  colorize?: (character: string, index: number) => string,
+): string {
+  if (!colorize) return text;
+  return Array.from(text, (character, index) => colorize(character, index)).join("");
 }

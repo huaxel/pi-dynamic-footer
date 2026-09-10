@@ -20,6 +20,8 @@ const THINKING_ABBR: Record<string, string> = {
   xhigh: "xhi",
 };
 
+const XHIGH_COLORS: ThemeColor[] = ["error", "warning", "accent", "success", "accent"];
+
 const PROVIDER_SHORT: Record<string, string> = {
   "cline-pass": "cp",
   "opencode-go": "og",
@@ -90,7 +92,10 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
     const text = `${stripProvider(model)}:${shortLevel}`;
     const tier = fastModeEnabled ? theme.fg("accent", ` ⚡${serviceTier ?? "fast"}`) : "";
     if (thinkingLevel === "xhigh" || thinkingLevel === "max") {
-      return rainbowText(text) + tier;
+      const spectrum = rainbowText(text, (character, index) =>
+        theme.fg(XHIGH_COLORS[index % XHIGH_COLORS.length]!, character),
+      );
+      return spectrum + tier;
     }
     // Override color with quota alert when usage is high
     const maxPct = maxQuotaPercent(input);
@@ -117,7 +122,7 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
   git(input) {
     const { gitBranch, gitDiffAdded, gitDiffRemoved, theme } = input;
     if (!gitBranch) return "";
-    const dirty = gitDiffAdded > 0 || gitDiffRemoved > 0;
+    const dirty = input.gitDirty === true || gitDiffAdded > 0 || gitDiffRemoved > 0;
     let text = theme.fg(dirty ? "warning" : "dim", gitBranch);
     if (gitDiffAdded > 0) {
       text += ` ${theme.fg("success", `+${gitDiffAdded}`)}`;
@@ -192,13 +197,15 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
   },
 
   cache(input) {
-    const { totalCacheRead, totalOutputTokens, theme } = input;
+    const { totalCacheRead, totalInputTokens, theme } = input;
     if (totalCacheRead <= 0) return "";
-    const total = totalCacheRead + totalOutputTokens;
+    // `input` excludes cache hits in pi-ai usage, so the prompt denominator is
+    // uncached input plus cacheRead—not generated output tokens.
+    const total = totalCacheRead + Math.max(0, totalInputTokens);
     if (total <= 0) return "";
     const pct = Math.round((totalCacheRead / total) * 100);
     const color = pct >= 70 ? "success" : pct >= 40 ? "dim" : "warning";
-    return theme.fg(color as any, `cache ${pct}%`);
+    return theme.fg(color, `cache ${pct}%`);
   },
 
   turnCount(input) {
