@@ -5,8 +5,8 @@
  * fetching and normalization. Credentials come from existing pi auth/env
  * sources and are never included in errors or logs.
  *
- * Supported providers: Claude, Codex, opencode-go, ClinePass, Umans,
- * GitHub Copilot, Google Gemini, Kimi Coding, Cursor, CommandCode, and Openference.
+ * Supported providers: Claude, Codex, opencode-go, Umans, Cursor,
+ * CommandCode, and Openference.
  */
 
 import { createHash } from "node:crypto";
@@ -19,7 +19,21 @@ import { authCredential, loadAuthJson, resolveAuthValue } from "@juanbenjumea/op
 import { fetchCommandCodeUsage } from "@juanbenjumea/opencode-go-usage/commandcode.ts";
 import { fetchCursorUsage } from "@juanbenjumea/opencode-go-usage/cursor.ts";
 import { fetchOpenferenceUsage } from "@juanbenjumea/opencode-go-usage/openference.ts";
+import { fetchUsageApi } from "@juanbenjumea/opencode-go-usage/lib/usage-api.ts";
+import { fetchDashboardUsage } from "@juanbenjumea/opencode-go-usage/lib/fetch.ts";
+import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
+import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
 import { readOpencodeGoQuotaState } from "./opencode-go-integration.ts";
+import {
+  clampPercent,
+  formatResetSeconds,
+  formatResetTime,
+  normalizePercent,
+  safeError,
+} from "./quota-format.ts";
+
+export { parseOpenCodeGoDashboard, resolveAuthValue };
+export { clampPercent, formatResetTime, normalizePercent, safeError } from "./quota-format.ts";
 
 /* ───── Types ───── */
 
@@ -41,31 +55,9 @@ export interface QuotaFetchOptions {
   apiKey?: string;
 }
 
-/* ───── Auth and safe helpers ───── */
+/* ───── Fetch helpers ───── */
 
 type JsonObject = Record<string, any>;
-
-function formatResetTime(date: Date): string {
-  if (!Number.isFinite(date.getTime())) return "unknown";
-  const diffMs = date.getTime() - Date.now();
-  if (diffMs <= 0) return "now";
-
-  const diffMins = Math.floor(diffMs / 60000);
-  if (diffMins < 60) return `${diffMins}m`;
-
-  const hours = Math.floor(diffMins / 60);
-  const mins = diffMins % 60;
-  if (hours < 24) return mins > 0 ? `${hours}h${mins}m` : `${hours}h`;
-
-  const days = Math.floor(hours / 24);
-  const rem = hours % 24;
-  return rem > 0 ? `${days}d${rem}h` : `${days}d`;
-}
-
-function formatResetSeconds(seconds: number): string | undefined {
-  if (!Number.isFinite(seconds)) return undefined;
-  return formatResetTime(new Date(Date.now() + Math.max(0, seconds) * 1000));
-}
 
 const MAX_JSON_RESPONSE_BYTES = 1_000_000;
 
@@ -117,26 +109,6 @@ async function fetchJson(url: string, init: RequestInit, timeoutMs = 10_000): Pr
   }
 }
 
-function clampPercent(value: number): number {
-  // NaN has no meaningful clamped value; surface it as 0 so a bad parse
-  // never renders as a full bar. ±Infinity clamps to the nearer bound.
-  if (Number.isNaN(value)) return 0;
-  if (!Number.isFinite(value)) return value > 0 ? 100 : 0;
-  return Math.max(0, Math.min(100, value));
-}
-
-function normalizePercent(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  const normalized = value <= 1 && value >= 0 ? value * 100 : value;
-  return clampPercent(normalized);
-}
-
-function safeError(error: unknown): string {
-  if (error instanceof Error && /^HTTP \d+$/.test(error.message)) return error.message;
-  if (error instanceof DOMException && error.name === "AbortError") return "timeout";
-  return "unavailable";
-}
-
 /* ───── Provider mapping ───── */
 
 const PROVIDER_MAP: Record<string, string> = {
@@ -145,11 +117,7 @@ const PROVIDER_MAP: Record<string, string> = {
   "openai-codex": "codex",
   opencode: "opencode-go",
   "opencode-go": "opencode-go",
-  "cline-pass": "cline-pass",
   umans: "umans",
-  "github-copilot": "copilot",
-  "google-gemini-cli": "gemini",
-  "kimi-coding": "kimi",
   cursor: "cursor",
   commandcode: "commandcode",
   openference: "openference",
@@ -267,15 +235,6 @@ async function fetchCodexUsage(): Promise<QuotaSnapshot> {
 }
 
 /* ───── opencode-go (official usage API, legacy dashboard fallback) ───── */
-
-import { fetchUsageApi } from "@juanbenjumea/opencode-go-usage/lib/usage-api.ts";
-import { fetchDashboardUsage } from "@juanbenjumea/opencode-go-usage/lib/fetch.ts";
-import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
-import type { OpenCodeGoWindow } from "@juanbenjumea/opencode-go-usage/lib/types.ts";
-
-export { parseOpenCodeGoDashboard };
-
-export { resolveAuthValue, formatResetTime, clampPercent, normalizePercent, safeError };
 
 /**
  * Build the QuotaSnapshot from a single account's parsed usage.
@@ -420,105 +379,6 @@ async function fetchOpencodeGoUsage(): Promise<QuotaSnapshot> {
   return { provider: "opencode-go", windows: buildSnapshot(parsed), fetchedAt: Date.now() };
 }
 
-/* ───── ClinePass ───── */
-
-interface ClineUsageItem {
-  createdAt?: string;
-  costUsd?: number;
-}
-
-const CLINE_BASE_URL = "https://api.cline.bot";
-const CLINE_PAGE_LIMIT = 100;
-const CLINE_MAX_PAGES = 100;
-function clineUrl(path: string): string {
-  return new URL(path, CLINE_BASE_URL).toString();
-}
-
-function clineApiKey(explicit?: string): string | undefined {
-  return explicit || resolveAuthValue(process.env.CLINE_API_KEY) || authCredential("cline-pass", "clinepass");
-}
-
-function parseClineDate(value: unknown): Date | undefined {
-  if (typeof value !== "string" || !value.trim()) return undefined;
-  const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date : undefined;
-}
-
-function clineWindow(
-  now: number,
-  label: string,
-  durationMs: number,
-  limitUnits: number,
-  items: ClineUsageItem[],
-): QuotaWindow | null {
-  if (!Number.isFinite(limitUnits) || limitUnits <= 0) return null;
-  const start = now - durationMs;
-  let usedUnits = 0;
-  let oldest: number | undefined;
-
-  for (const item of items) {
-    const createdAt = parseClineDate(item.createdAt)?.getTime();
-    if (createdAt === undefined || createdAt < start || createdAt > now) continue;
-    const cost = Number(item.costUsd);
-    if (Number.isFinite(cost)) usedUnits += cost;
-    oldest = oldest === undefined ? createdAt : Math.min(oldest, createdAt);
-  }
-
-  const usedPercent = limitUnits > 0 ? clampPercent((usedUnits / limitUnits) * 100) : 0;
-  const resetAt = oldest === undefined ? undefined : new Date(oldest + durationMs);
-  return { label, usedPercent, resetsIn: resetAt ? formatResetTime(resetAt) : undefined };
-}
-
-async function fetchClineUsage(apiKey: string): Promise<QuotaSnapshot> {
-  try {
-    const headers = { Authorization: `Bearer ${apiKey}`, Accept: "application/json", "User-Agent": "pi-obs-footer" };
-    const me = await fetchJson(clineUrl("/api/v1/users/me"), { headers });
-    const userId = typeof me.data?.data?.id === "string" ? me.data.data.id : "";
-    if (!userId) return { provider: "ClinePass", windows: [], error: "invalid-response", fetchedAt: Date.now() };
-
-    const plans = await fetchJson(clineUrl("/api/v1/plans"), { headers });
-    const planList = Array.isArray(plans.data?.data) ? plans.data.data : [];
-    const threshold = planList.find((plan: any) =>
-      plan?.isActive && plan?.entitlements?.cline_pass?.enabled && plan?.entitlements?.cline_pass?.inferenceCapThreshold,
-    )?.entitlements?.cline_pass?.inferenceCapThreshold;
-    if (!threshold) return { provider: "ClinePass", windows: [], error: "no-active-plan", fetchedAt: Date.now() };
-
-    const items: ClineUsageItem[] = [];
-    let cursor = "";
-    const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-
-    for (let page = 0; page < CLINE_MAX_PAGES; page++) {
-      const url = new URL(clineUrl(`/api/v1/users/${encodeURIComponent(userId)}/usages`));
-      url.searchParams.set("limit", String(CLINE_PAGE_LIMIT));
-      if (cursor) url.searchParams.set("cursor", cursor);
-      const response = await fetchJson(url.toString(), { headers });
-      const data = response.data?.data;
-      const pageItems = Array.isArray(data?.items) ? data.items : [];
-      items.push(...pageItems);
-
-      const oldest = pageItems
-        .map((item: ClineUsageItem) => parseClineDate(item.createdAt)?.getTime())
-        .filter((value: number | undefined): value is number => value !== undefined)
-        .reduce((min: number | undefined, value: number) => min === undefined ? value : Math.min(min, value), undefined);
-      cursor = typeof data?.nextToken === "string" ? data.nextToken.trim() : "";
-      if (!cursor || pageItems.length === 0 || (oldest !== undefined && oldest < cutoff)) break;
-    }
-
-    const now = Date.now();
-    return {
-      provider: "ClinePass",
-      windows: [
-        clineWindow(now, "5h", 5 * 60 * 60 * 1000, Number(threshold.last5HoursUsageCostUSDPerUser), items),
-        clineWindow(now, "Week", 7 * 24 * 60 * 60 * 1000, Number(threshold.last7daysUsageCostUSDPerUser), items),
-        clineWindow(now, "Month", 30 * 24 * 60 * 60 * 1000, Number(threshold.last30daysUsageCostUSDPerUser), items),
-      ].filter((window): window is QuotaWindow => window !== null),
-      fetchedAt: now,
-    };
-  } catch (error) {
-    return { provider: "ClinePass", windows: [], error: safeError(error), fetchedAt: Date.now() };
-  }
-}
-
 /* ───── Umans ───── */
 
 async function fetchUmansUsage(apiKey?: string): Promise<QuotaSnapshot> {
@@ -548,206 +408,13 @@ async function fetchUmansUsage(apiKey?: string): Promise<QuotaSnapshot> {
   }
 }
 
-/* ───── Copilot ───── */
-
-async function fetchCopilotUsage(): Promise<QuotaSnapshot> {
-  const token = authCredential("github-copilot");
-  if (!token) return { provider: "Copilot", windows: [], error: "no-auth", fetchedAt: Date.now() };
-
-  try {
-    const { data } = await fetchJson("https://api.github.com/copilot_internal/user", {
-      headers: {
-        "Editor-Version": "vscode/1.96.2",
-        "User-Agent": "GitHubCopilotChat/0.26.7",
-        "X-Github-Api-Version": "2025-04-01",
-        Accept: "application/json",
-        Authorization: `token ${token}`,
-      },
-    });
-    const windows: QuotaWindow[] = [];
-
-    const resetDate = data.quota_reset_date_utc ? new Date(data.quota_reset_date_utc) : undefined;
-    const resetsIn = resetDate ? formatResetTime(resetDate) : undefined;
-
-    if (data.quota_snapshots?.premium_interactions) {
-      const pi = data.quota_snapshots.premium_interactions;
-      const remaining = Number(pi.percent_remaining);
-      if (Number.isFinite(remaining)) {
-        windows.push({ label: "Premium", usedPercent: clampPercent(100 - remaining), resetsIn });
-      }
-    }
-
-    if (data.quota_snapshots?.chat && !data.quota_snapshots.chat.unlimited) {
-      const chat = data.quota_snapshots.chat;
-      const remaining = Number(chat.percent_remaining);
-      if (Number.isFinite(remaining)) {
-        windows.push({
-          label: "Chat",
-          usedPercent: clampPercent(100 - remaining),
-          resetsIn,
-        });
-      }
-    }
-
-    return { provider: "Copilot", windows, fetchedAt: Date.now() };
-  } catch (error) {
-    return { provider: "Copilot", windows: [], error: safeError(error), fetchedAt: Date.now() };
-  }
-}
-
-/* ───── Gemini ───── */
-
-async function fetchGeminiUsage(): Promise<QuotaSnapshot> {
-  let token: string | undefined;
-
-  // Try auth.json first
-  token = authCredential("google-gemini-cli");
-
-  // Fallback: ~/.gemini/oauth_creds.json
-  if (!token) {
-    try {
-      const geminiPath = join(homedir(), ".gemini", "oauth_creds.json");
-      if (existsSync(geminiPath)) {
-        const creds = JSON.parse(readFileSync(geminiPath, "utf-8"));
-        token = creds.access_token;
-      }
-    } catch (error) {
-      // File exists but is unreadable or malformed — surface the detail
-      if (error instanceof SyntaxError) {
-        return { provider: "Gemini", windows: [], error: "gemini-oauth-creds-corrupt", fetchedAt: Date.now() };
-      }
-      if (error instanceof Error && (error as NodeJS.ErrnoException).code === "EACCES") {
-        return { provider: "Gemini", windows: [], error: "gemini-oauth-creds-permission", fetchedAt: Date.now() };
-      }
-    }
-  }
-
-  if (!token) return { provider: "Gemini", windows: [], error: "no-auth", fetchedAt: Date.now() };
-
-  try {
-    const { data } = await fetchJson("https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: "{}",
-    });
-
-    // Track min remaining fraction per model, plus the associated reset time
-    const quotas: Record<string, { frac: number; resetTime?: string }> = {};
-    for (const bucket of data.buckets || []) {
-      const model = typeof bucket.modelId === "string" ? bucket.modelId : "unknown";
-      const remainingFraction = Number(bucket.remainingFraction);
-      if (!Number.isFinite(remainingFraction)) continue;
-      const frac = Math.max(0, Math.min(1, remainingFraction));
-      const existing = quotas[model];
-      if (!existing || frac < existing.frac) {
-        quotas[model] = { frac, resetTime: bucket.resetTime || bucket.reset_time };
-      }
-    }
-
-    const windows: QuotaWindow[] = [];
-    let proMin = 1, flashMin = 1;
-    let hasProModel = false, hasFlashModel = false;
-    let proReset: string | undefined, flashReset: string | undefined;
-
-    for (const [model, { frac, resetTime }] of Object.entries(quotas)) {
-      if (model.toLowerCase().includes("pro")) {
-        hasProModel = true;
-        if (frac < proMin) { proMin = frac; proReset = resetTime; }
-      }
-      if (model.toLowerCase().includes("flash")) {
-        hasFlashModel = true;
-        if (frac < flashMin) { flashMin = frac; flashReset = resetTime; }
-      }
-    }
-
-    if (hasProModel) {
-      windows.push({
-        label: "Pro",
-        usedPercent: clampPercent((1 - proMin) * 100),
-        resetsIn: proReset ? formatResetTime(new Date(proReset)) : undefined,
-      });
-    }
-    if (hasFlashModel) {
-      windows.push({
-        label: "Flash",
-        usedPercent: clampPercent((1 - flashMin) * 100),
-        resetsIn: flashReset ? formatResetTime(new Date(flashReset)) : undefined,
-      });
-    }
-
-    return { provider: "Gemini", windows, fetchedAt: Date.now() };
-  } catch (error) {
-    return { provider: "Gemini", windows: [], error: safeError(error), fetchedAt: Date.now() };
-  }
-}
-
-/* ───── Kimi ───── */
-
-async function fetchKimiUsage(): Promise<QuotaSnapshot> {
-  const token = resolveAuthValue(process.env.KIMI_API_KEY) || authCredential("kimi-coding");
-  if (!token) return { provider: "Kimi Coding", windows: [], error: "no-auth", fetchedAt: Date.now() };
-
-  try {
-    const { data } = await fetchJson("https://api.kimi.com/coding/v1/usages", {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-    });
-    const windows: QuotaWindow[] = [];
-
-    for (const limit of data.limits || []) {
-      const windowLimit = Number(limit.detail?.limit);
-      const windowRemaining = Number(limit.detail?.remaining);
-      if (Number.isFinite(windowLimit) && windowLimit > 0 && Number.isFinite(windowRemaining)) {
-        const used = windowLimit - windowRemaining;
-        const usedPercent = clampPercent((used / windowLimit) * 100);
-        const resetDate = limit.detail?.resetTime ? new Date(limit.detail.resetTime) : undefined;
-        const label =
-          limit.window?.duration && limit.window?.timeUnit === "TIME_UNIT_MINUTE"
-            ? `${Math.round(limit.window.duration / 60)}h`
-            : "Window";
-        windows.push({
-          label,
-          usedPercent,
-          resetsIn: resetDate ? formatResetTime(resetDate) : undefined,
-        });
-      }
-    }
-
-    const weeklyLimit = Number(data.usage?.limit);
-    const weeklyRemaining = Number(data.usage?.remaining);
-    const weeklyResetTime = data.usage?.resetTime;
-    if (Number.isFinite(weeklyLimit) && weeklyLimit > 0 && Number.isFinite(weeklyRemaining)) {
-      const used = weeklyLimit - weeklyRemaining;
-      const usedPercent = clampPercent((used / weeklyLimit) * 100);
-      windows.push({
-        label: "Week",
-        usedPercent,
-        resetsIn: weeklyResetTime ? formatResetTime(new Date(weeklyResetTime)) : undefined,
-      });
-    }
-
-    return { provider: "Kimi Coding", windows, fetchedAt: Date.now() };
-  } catch (error) {
-    return { provider: "Kimi Coding", windows: [], error: safeError(error), fetchedAt: Date.now() };
-  }
-}
-
 /* ───── Dispatch and cache ───── */
 
 const FETCHERS: Record<string, (options: QuotaFetchOptions) => Promise<QuotaSnapshot>> = {
   claude: async () => fetchClaudeUsage(),
   codex: async () => fetchCodexUsage(),
   "opencode-go": async () => fetchOpencodeGoUsage(),
-  "cline-pass": async (options) => {
-    const key = clineApiKey(options.apiKey);
-    return key ? fetchClineUsage(key) : { provider: "ClinePass", windows: [], error: "no-auth", fetchedAt: Date.now() };
-  },
   umans: async (options) => fetchUmansUsage(options.apiKey),
-  copilot: async () => fetchCopilotUsage(),
-  gemini: async () => fetchGeminiUsage(),
-  kimi: async () => fetchKimiUsage(),
   cursor: async () => fetchCursorUsage(),
   commandcode: async () => fetchCommandCodeUsage(),
   openference: async (options) => fetchOpenferenceUsage(options.apiKey),

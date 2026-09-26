@@ -1,12 +1,15 @@
-export { createJsonStore } from "./json-store.js";
-export { createJsonlStore } from "./jsonl-store.js";
-export { createFileBackend, type FileBackendOptions } from "./file-backend.js";
-export { createMemoryBackend } from "./memory-backend.js";
-export type { JsonStore, JsonlStore, Storage, RawBackend } from "./types.js";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
+import { createFileBackend, type FileBackendOptions } from "./file-backend.js";
 import { createJsonStore } from "./json-store.js";
 import { createJsonlStore } from "./jsonl-store.js";
-import type { Storage, RawBackend } from "./types.js";
+import { createMemoryBackend } from "./memory-backend.js";
+import type { RawBackend, Storage } from "./types.js";
+
+export { createFileBackend, type FileBackendOptions } from "./file-backend.js";
+export { createMemoryBackend } from "./memory-backend.js";
+export type { JsonStore, JsonlStore, RawBackend, Storage } from "./types.js";
 
 export function createStorage(backend: RawBackend): Storage {
   return {
@@ -18,11 +21,6 @@ export function createStorage(backend: RawBackend): Storage {
     },
   };
 }
-
-import { createFileBackend } from "./file-backend.js";
-import { createMemoryBackend } from "./memory-backend.js";
-import { homedir } from "node:os";
-import { join } from "node:path";
 
 /**
  * Resolve the pi agent data dir, honoring PI_CODING_AGENT_DIR the same way

@@ -12,14 +12,14 @@ import { createFileBackend } from "../lib/storage/file-backend.js";
 import { createMemoryBackend } from "../lib/storage/memory-backend.js";
 import { getAgentDir, getDefaultObservabilityDir } from "../lib/storage/index.js";
 import { createMemorySettingsStorage, createSettingsManager } from "../lib/settings/index.js";
+import { resolveAuthValue } from "@juanbenjumea/opencode-go-usage";
+import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
 import {
-  parseOpenCodeGoDashboard,
-  resolveAuthValue,
   clampPercent,
   normalizePercent,
   formatResetTime,
   safeError,
-} from "../lib/quota-provider.js";
+} from "../lib/quota-format.js";
 
 test("fmtTokens handles invalid and negative values", () => {
   assert.equal(fmtTokens(Number.NaN), "0");

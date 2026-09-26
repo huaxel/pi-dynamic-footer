@@ -152,7 +152,7 @@ export default function (pi: ExtensionAPI) {
     }
 
     let apiKey: string | undefined;
-    if (provider === "cline-pass" || provider === "umans" || provider === "openference") {
+    if (provider === "umans" || provider === "openference") {
       try {
         const registry = (ctx as ExtensionContext & { modelRegistry?: ModelRegistryLike }).modelRegistry;
         const resolved = await registry?.getApiKeyForProvider?.(provider);
