@@ -12,8 +12,8 @@ import { createFileBackend } from "../lib/storage/file-backend.js";
 import { createMemoryBackend } from "../lib/storage/memory-backend.js";
 import { getAgentDir, getDefaultObservabilityDir } from "../lib/storage/index.js";
 import { createMemorySettingsStorage, createSettingsManager } from "../lib/settings/index.js";
-import { resolveAuthValue } from "@juanbenjumea/opencode-go-usage";
-import { parseOpenCodeGoDashboard } from "@juanbenjumea/opencode-go-usage/lib/dashboard.ts";
+import { resolveAuthValue } from "@juanbenjumea/pi-provider-usage-fetcher";
+import { parseOpenCodeGoDashboard } from "@juanbenjumea/pi-provider-usage-fetcher/lib/dashboard.ts";
 import {
   clampPercent,
   normalizePercent,
