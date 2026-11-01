@@ -42,7 +42,7 @@
     "@earendil-works/pi-tui": "*"
   },
   "dependencies": {
-    "@juanbenjumea/opencode-go-usage": "^0.3.1"
+    "@juanbenjumea/pi-provider-usage-fetcher": "^0.3.4"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

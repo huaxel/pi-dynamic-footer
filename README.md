@@ -31,6 +31,8 @@ Quota bars are shown when provider credentials are available. Supported provider
 - GitHub Copilot
 - Google Gemini
 - Kimi Coding
+- Synthetic
+- z.ai / GLM
 - Cursor
 - CommandCode
 - Openference

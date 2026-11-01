@@ -15,7 +15,7 @@ import {
   resolveCursorCookieHeader,
   cursorCookieFromAccessToken,
   parseCursorUsageSummary,
-} from "@juanbenjumea/opencode-go-usage";
+} from "@juanbenjumea/pi-provider-usage-fetcher";
 
 let tmpDir: string;
 let savedAgentDir: string | undefined;
