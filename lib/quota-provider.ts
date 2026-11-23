@@ -201,10 +201,11 @@ function hasStoredCredential(entry: unknown): boolean {
 /**
  * Providers to render after the active one.
  *
- * `raw === "none"` opts out; an explicit list is honoured verbatim (unknown ids
- * included, so a typo surfaces as a fetcher error); anything else means "show
- * every provider pi holds a credential for", which is the default so no
- * environment variable is needed for the footer to report a second allowance.
+ * The footer reports the selected model's provider: that is the meter the
+ * session is spending, and it is the only one shown by default. `auto` adds
+ * every provider pi holds a credential for, an explicit list adds exactly
+ * those (unknown ids included, so a typo surfaces as a fetcher error), and
+ * `none` is the same as leaving it unset.
  */
 /**
  * Extras to render.
@@ -230,12 +231,12 @@ export function resolveExtraUsageProviders(
   // configured entry may say "codex", and the duplicate would render twice.
   const activeName = activeProvider?.trim();
   const active = activeName ? detectProvider(activeName) ?? activeName.toLowerCase() : undefined;
-  const trimmed = raw?.trim();
-  const entries = trimmed
-    ? trimmed.toLowerCase() === "none"
-      ? []
-      : trimmed.split(",")
-    : authenticated;
+  const trimmed = raw?.trim().toLowerCase();
+  const entries = !trimmed || trimmed === "none"
+    ? []
+    : trimmed === "auto" || trimmed === "all"
+      ? authenticated
+      : trimmed.split(",");
   const seen = new Set<string>();
   const resolved: string[] = [];
   for (const entry of entries) {

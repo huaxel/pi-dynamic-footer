@@ -27,23 +27,28 @@ test("unknown provider ids are kept so the fetcher can report the failure", () =
   assert.deepEqual(resolveExtraUsageProviders("not-a-provider", "codex"), ["not-a-provider"]);
 });
 
-test("an unset variable means every authenticated provider, not none", () => {
-  // This is the whole point of the default: no environment variable should be
-  // needed for a second allowance to appear in the footer.
-  assert.deepEqual(resolveExtraUsageProviders(undefined, "codex", ["mistral", "copilot"]), [
+test("the default is the selected model's provider and nothing else", () => {
+  // The footer's contract: the meter of the provider the session is running on.
+  // A detected provider must not appear just because a credential exists.
+  assert.deepEqual(resolveExtraUsageProviders(undefined, "codex", ["mistral", "copilot"]), []);
+  assert.deepEqual(resolveExtraUsageProviders("", "codex", ["mistral"]), []);
+  assert.deepEqual(resolveExtraUsageProviders("none", "codex", ["mistral"]), []);
+  assert.deepEqual(resolveExtraUsageProviders("NONE", "codex", ["mistral"]), []);
+});
+
+test("auto adds every authenticated provider, minus the active one", () => {
+  assert.deepEqual(resolveExtraUsageProviders("auto", "codex", ["mistral", "copilot"]), [
     "mistral",
     "copilot",
   ]);
-  assert.deepEqual(resolveExtraUsageProviders("", "codex", ["mistral"]), ["mistral"]);
-  // The active provider is still dropped from the automatic list.
-  assert.deepEqual(resolveExtraUsageProviders(undefined, "openai-codex", ["codex", "mistral"]), [
+  assert.deepEqual(resolveExtraUsageProviders("AUTO", "openai-codex", ["codex", "mistral"]), [
     "mistral",
   ]);
+  assert.deepEqual(resolveExtraUsageProviders("all", "codex", ["mistral"]), ["mistral"]);
+  assert.deepEqual(resolveExtraUsageProviders("auto", "codex", []), []);
 });
 
-test("none opts out and an explicit list overrides detection", () => {
-  assert.deepEqual(resolveExtraUsageProviders("none", "codex", ["mistral", "copilot"]), []);
-  assert.deepEqual(resolveExtraUsageProviders("NONE", "codex", ["mistral"]), []);
+test("an explicit list overrides auto detection", () => {
   assert.deepEqual(resolveExtraUsageProviders("mistral", "codex", ["copilot"]), ["mistral"]);
 });
 

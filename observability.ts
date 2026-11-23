@@ -177,7 +177,9 @@ export default function (pi: ExtensionAPI) {
    * footer the user never asked for.
    */
   function extrasRequestedExplicitly(): boolean {
-    return Boolean(process.env.PI_OBS_USAGE_PROVIDERS?.trim());
+    const configured = process.env.PI_OBS_USAGE_PROVIDERS?.trim().toLowerCase();
+    // "auto" is a request, not a named provider: a guess that fails stays quiet.
+    return Boolean(configured) && configured !== "auto" && configured !== "all";
   }
 
   /** A malformed or missing auth store must not break the footer refresh. */

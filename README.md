@@ -58,35 +58,30 @@ Set `PI_OBS_SHOW_FULL_PATH=1` to start with the full home-relative working-direc
 
 ### Tracking more than the active provider
 
-The usage bars normally show the subscription of the provider the session is
-using. Every other provider pi holds a credential for is fetched as well and
-rendered after it, so a second allowance appears with no configuration:
+The usage bar reports the provider of the selected model: that is the meter the
+session is spending. Other providers are not fetched or shown unless you ask
+for them.
+
+`PI_OBS_USAGE_PROVIDERS=auto` adds every provider pi holds a credential for,
+detected from its auth store:
 
 ```
-codex 5h━━─58% ↻ 4d7h ▸ mistral Vibe━──45% ↻ 7d10h ▸ copilot Month───1%
+codex 5h━━─58% ↻ 4d6h ▸ mistral Month───1% ▸ Vibe━──45% ↻ 7d9h
 ```
 
-Detection reads pi's auth store and keeps only providers the fetcher can answer
-for; providers whose credentials live outside it (Gemini OAuth files, web
-sessions) are not picked up, because probing them would spend a request per
-refresh and show an error for an allowance you never asked to watch. A detected
-provider whose fetch fails is dropped for the same reason — an automatic guess
-should cost nothing when it is wrong. An explicit list below keeps its errors,
-so a bar that is missing from a configured provider is never ambiguous.
+A comma-separated list adds exactly those providers instead (pi provider ids or
+aliases, e.g. `mistral,grok`). `none` — or leaving it unset — keeps the footer to
+the active provider alone.
 
-`PI_OBS_USAGE_PROVIDERS` overrides the default when you want a fixed set
-(comma-separated pi provider ids or aliases, e.g. `mistral,grok`), and `none`
-turns the extra bars off entirely:
+Detection cannot see credentials that live outside the auth store (Grok's CLI
+login, Gemini OAuth files, web sessions), and a detected provider whose fetch
+fails is dropped: an automatic guess should cost nothing when it is wrong. An
+explicitly listed provider keeps its error, so a missing bar is never ambiguous.
 
-```bash
-PI_OBS_USAGE_PROVIDERS=mistral,grok pi   # only these two
-PI_OBS_USAGE_PROVIDERS=none pi           # active provider only
-```
-
-Each extra provider is fetched on the same refresh as the active one, deduplicated
-against it, and labelled with its own name (`mistral Vibe━──45% ↻ 7d`). A provider
-whose fetch fails shows the error (`mistral HTTP 401`) instead of a blank segment,
-so a bar that is missing is never ambiguous.
+Each window keeps its own label (`mistral Vibe━──45%`), and a provider whose
+fetch fails shows the error (`mistral HTTP 401`) instead of a blank segment. A
+window at 0% is left out — an empty bar reads as a rendering fault — unless
+every window of that provider is empty.
 
 ## Development
 
