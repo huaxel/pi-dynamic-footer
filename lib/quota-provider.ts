@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import {
   detectProvider,
   fetchProviderUsage,
+  PROVIDER_FETCHERS,
   fetchOpencodeGoUsage as fetchSharedOpencodeGoUsage,
   fetchUsageApi,
   fetchDashboardUsage,
@@ -39,6 +40,7 @@ export {
   fetchProviderUsage,
   parseOpenCodeGoDashboard,
   resolveAuthValue,
+  loadAuthJson,
   formatResetTime,
   clampPercent,
   normalizePercent,
@@ -164,19 +166,79 @@ function evictStaleCache(): void {
  * that resolve to the active provider, and duplicates. Kept pure and exported so
  * the parsing is testable without an extension runtime.
  */
+/**
+ * Canonical providers pi has a stored credential for, so the footer can show
+ * allowances the session is not currently using without any configuration.
+ *
+ * Only providers the fetcher maps from an auth-store key are detected: pi's
+ * auth.json keys go through `detectProvider`, so an entry cannot be claimed
+ * here when the fetcher could not fetch it. Providers whose credentials live
+ * outside auth.json (Gemini OAuth files, web sessions) are left out on
+ * purpose: including them would spend a network round trip per refresh and
+ * surface an error bar for a provider the user never asked to watch.
+ */
+export function authenticatedUsageProviders(auth: Record<string, unknown> = {}): string[] {
+  const canonical: string[] = [];
+  for (const [piProvider, entry] of Object.entries(auth)) {
+    const provider = detectProvider(piProvider);
+    if (!provider || !PROVIDER_FETCHERS[provider]) continue;
+    if (!hasStoredCredential(entry)) continue;
+    if (!canonical.includes(provider)) canonical.push(provider);
+  }
+  return canonical;
+}
+
+function hasStoredCredential(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object") return false;
+  const block = entry as Record<string, unknown>;
+  for (const field of ["apiKey", "key", "token", "access", "refresh"]) {
+    const value = block[field];
+    if (typeof value === "string" && resolveAuthValue(value)) return true;
+  }
+  return false;
+}
+
+/**
+ * Providers to render after the active one.
+ *
+ * `raw === "none"` opts out; an explicit list is honoured verbatim (unknown ids
+ * included, so a typo surfaces as a fetcher error); anything else means "show
+ * every provider pi holds a credential for", which is the default so no
+ * environment variable is needed for the footer to report a second allowance.
+ */
+/**
+ * Extras to render.
+ *
+ * Automatic detection is a guess, so a detected provider whose fetch fails (an
+ * expired token, a throttled endpoint) is dropped rather than rendered as an
+ * error you never asked to see. An explicitly configured provider keeps its
+ * error visible: there, silence would hide a typo or a broken credential.
+ */
+export function visibleExtraUsage(
+  snapshots: readonly QuotaSnapshot[],
+  explicit: boolean,
+): QuotaSnapshot[] {
+  return explicit ? [...snapshots] : snapshots.filter((snapshot) => !snapshot.error);
+}
+
 export function resolveExtraUsageProviders(
   raw: string | undefined,
   activeProvider: string | null,
+  authenticated: string[] = [],
 ): string[] {
-  const trimmed = raw?.trim();
-  if (!trimmed) return [];
   // Normalize the active provider too: pi reports "openai-codex" while the
   // configured entry may say "codex", and the duplicate would render twice.
   const activeName = activeProvider?.trim();
   const active = activeName ? detectProvider(activeName) ?? activeName.toLowerCase() : undefined;
+  const trimmed = raw?.trim();
+  const entries = trimmed
+    ? trimmed.toLowerCase() === "none"
+      ? []
+      : trimmed.split(",")
+    : authenticated;
   const seen = new Set<string>();
   const resolved: string[] = [];
-  for (const entry of trimmed.split(",")) {
+  for (const entry of entries) {
     const candidate = entry.trim();
     if (!candidate) continue;
     const key = detectProvider(candidate) ?? candidate.toLowerCase();

@@ -47,9 +47,12 @@ import { renderFooter, type FooterInput } from "./lib/footer-engine/index.js";
 
 import { createFileStorage, getDefaultObservabilityDir, type Storage } from "./lib/storage/index.js";
 import {
+  authenticatedUsageProviders,
   fetchQuota,
   resolveExtraUsageProviders,
+  visibleExtraUsage,
   safeError,
+  loadAuthJson,
   type QuotaSnapshot,
 } from "./lib/quota-provider.ts";
 import { registerOpencodeGoRefresh } from "./lib/opencode-go-integration.ts";
@@ -148,12 +151,39 @@ export default function (pi: ExtensionAPI) {
   };
 
   /**
-   * Providers to track in addition to the active model's own, from
-   * PI_OBS_USAGE_PROVIDERS (`mistral,grok`); the footer otherwise only knows the
-   * provider the session is currently using.
+   * Providers to track in addition to the active model's own.
+   *
+   * Default: every provider pi holds a credential for, discovered from the auth
+   * store, so a second allowance shows up without configuration.
+   * PI_OBS_USAGE_PROVIDERS overrides that (`mistral,grok`) and `none` opts out.
    */
   function extraUsageProviders(activeProvider: string | null): string[] {
-    return resolveExtraUsageProviders(process.env.PI_OBS_USAGE_PROVIDERS, activeProvider);
+    return resolveExtraUsageProviders(
+      process.env.PI_OBS_USAGE_PROVIDERS,
+      activeProvider,
+      authenticatedUsageProviders(readAuthStore()),
+    );
+  }
+
+  /**
+   * Whether the extra providers were requested explicitly.
+   *
+   * An explicit list is a request, so its failures stay visible. Automatic
+   * detection is a guess: a provider whose credential exists but whose fetch
+   * fails (an expired Copilot token, say) must not put an error bar in the
+   * footer the user never asked for.
+   */
+  function extrasRequestedExplicitly(): boolean {
+    return Boolean(process.env.PI_OBS_USAGE_PROVIDERS?.trim());
+  }
+
+  /** A malformed or missing auth store must not break the footer refresh. */
+  function readAuthStore(): Record<string, unknown> {
+    try {
+      return loadAuthJson();
+    } catch {
+      return {};
+    }
   }
 
   async function refreshQuota(ctx: ExtensionContext): Promise<void> {
@@ -200,9 +230,10 @@ export default function (pi: ExtensionAPI) {
 
     const settled = await extraResults;
     if (epoch === quotaEpoch) {
-      state.extraQuotaUsage = settled
+      const snapshots = settled
         .map((result) => (result.status === "fulfilled" ? result.value : null))
         .filter((snapshot): snapshot is QuotaSnapshot => snapshot !== null);
+      state.extraQuotaUsage = visibleExtraUsage(snapshots, extrasRequestedExplicitly());
     }
     requestFooterRender();
   }

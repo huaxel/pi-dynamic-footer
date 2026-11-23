@@ -59,12 +59,28 @@ Set `PI_OBS_SHOW_FULL_PATH=1` to start with the full home-relative working-direc
 ### Tracking more than the active provider
 
 The usage bars normally show the subscription of the provider the session is
-using. Set `PI_OBS_USAGE_PROVIDERS` to a comma-separated list (pi provider ids or
-aliases, e.g. `mistral,grok`) to fetch those as well and render them after the
-active provider:
+using. Every other provider pi holds a credential for is fetched as well and
+rendered after it, so a second allowance appears with no configuration:
+
+```
+codex 5h━━─58% ↻ 4d7h ▸ mistral Vibe━──45% ↻ 7d10h ▸ copilot Month───1%
+```
+
+Detection reads pi's auth store and keeps only providers the fetcher can answer
+for; providers whose credentials live outside it (Gemini OAuth files, web
+sessions) are not picked up, because probing them would spend a request per
+refresh and show an error for an allowance you never asked to watch. A detected
+provider whose fetch fails is dropped for the same reason — an automatic guess
+should cost nothing when it is wrong. An explicit list below keeps its errors,
+so a bar that is missing from a configured provider is never ambiguous.
+
+`PI_OBS_USAGE_PROVIDERS` overrides the default when you want a fixed set
+(comma-separated pi provider ids or aliases, e.g. `mistral,grok`), and `none`
+turns the extra bars off entirely:
 
 ```bash
-PI_OBS_USAGE_PROVIDERS=mistral,grok pi
+PI_OBS_USAGE_PROVIDERS=mistral,grok pi   # only these two
+PI_OBS_USAGE_PROVIDERS=none pi           # active provider only
 ```
 
 Each extra provider is fetched on the same refresh as the active one, deduplicated
