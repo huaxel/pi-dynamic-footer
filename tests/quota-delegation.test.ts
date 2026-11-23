@@ -23,6 +23,11 @@ test("detectProvider maps aliases and canonical names via delegation", () => {
   assert.equal(detectProvider("gemini"), "gemini");
   assert.equal(detectProvider("kimi-coding"), "kimi");
   assert.equal(detectProvider("kimi"), "kimi");
+  assert.equal(detectProvider("synthetic"), "synthetic");
+  assert.equal(detectProvider("synthetic.new"), "synthetic");
+  assert.equal(detectProvider("zai"), "zai");
+  assert.equal(detectProvider("z.ai"), "zai");
+  assert.equal(detectProvider("glm-coding-plan"), "zai");
   assert.equal(detectProvider("cursor"), "cursor");
   assert.equal(detectProvider("commandcode"), "commandcode");
   assert.equal(detectProvider("openference"), "openference");
@@ -185,6 +190,71 @@ test("fetchQuota delegates Kimi Coding usage fetching to shared package", async 
   assert.equal(snapshot!.provider, "Kimi Coding");
   assert.equal(snapshot!.windows[0]!.label, "5h");
   assert.equal(snapshot!.windows[0]!.usedPercent, 60);
+});
+
+test("fetchQuota delegates Synthetic usage fetching to shared package", async () => {
+  const mockFetch: typeof fetch = async (input, init) => {
+    assert.equal(String(input), "https://api.synthetic.new/v2/quotas");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer synthetic-test-token");
+    return Response.json({ quotas: [{ label: "Weekly", used: 4, limit: 10 }] });
+  };
+
+  const snapshot = await fetchQuota("synthetic.new", {
+    apiKey: "synthetic-test-token",
+    fetchImpl: mockFetch,
+  });
+
+  assert.ok(snapshot);
+  assert.equal(snapshot!.provider, "Synthetic");
+  assert.equal(snapshot!.windows[0]!.usedPercent, 40);
+});
+
+test("fetchQuota delegates z.ai usage fetching to shared package", async () => {
+  const mockFetch: typeof fetch = async (input, init) => {
+    assert.match(String(input), /^https:\/\/open\.bigmodel\.cn\/api\/monitor\/usage\/quota\/limit/);
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer zai-test-token");
+    return Response.json({
+      success: true,
+      code: 200,
+      data: { limits: [{ type: "TOKENS_LIMIT", unit: 5, number: 5, percentage: 40 }] },
+    });
+  };
+
+  const snapshot = await fetchQuota("glm-coding-plan", {
+    apiKey: "zai-test-token",
+    region: "bigmodel-cn",
+    fetchImpl: mockFetch,
+  });
+
+  assert.ok(snapshot);
+  assert.equal(snapshot!.provider, "z.ai");
+  assert.ok(snapshot!.windows.length > 0);
+});
+
+test("fetchQuota delegates Grok subscription usage to shared package", async () => {
+  const periodEnd = new Date(Date.now() + 24 * 60 * 60_000);
+  const periodStart = new Date(periodEnd.getTime() - 7 * 24 * 60 * 60_000);
+  const mockFetch: typeof fetch = async (input, init) => {
+    assert.equal(String(input), "https://cli-chat-proxy.grok.com/v1/billing?format=credits");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer grok-test-token");
+    assert.equal(new Headers(init?.headers).get("x-xai-token-auth"), "xai-grok-cli");
+    return Response.json({
+      config: {
+        creditUsagePercent: 37,
+        currentPeriod: { start: periodStart.toISOString(), end: periodEnd.toISOString() },
+      },
+    });
+  };
+
+  const snapshot = await fetchQuota("supergrok", {
+    apiKey: "grok-test-token",
+    fetchImpl: mockFetch,
+  });
+
+  assert.ok(snapshot);
+  assert.equal(snapshot!.provider, "Grok");
+  assert.equal(snapshot!.windows[0]!.label, "Week");
+  assert.equal(snapshot!.windows[0]!.usedPercent, 37);
 });
 
 test("fetchQuota returns null for unknown provider", async () => {
