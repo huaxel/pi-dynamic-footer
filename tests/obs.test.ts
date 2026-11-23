@@ -155,6 +155,75 @@ test("quota footer keeps low-usage and monthly windows visible", () => {
   assert.match(rendered, /↻ 20d/);
 });
 
+test("quota footer names the provider it belongs to", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.usageBars!({
+    theme,
+    quotaUsage: {
+      provider: "Mistral",
+      fetchedAt: Date.now(),
+      windows: [
+        { label: "Month", usedPercent: 1.3, resetsIn: "7d10h" },
+        { label: "Vibe", usedPercent: 44.8, resetsIn: "7d10h" },
+      ],
+    },
+  } as never);
+  assert.match(rendered, /^mistral /);
+  assert.match(rendered, /Month/);
+  assert.match(rendered, /Vibe/);
+});
+
+test("quota footer shows a failure instead of rendering blank", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const failed = builtinRenderers.usageBars!({
+    theme,
+    quotaUsage: { provider: "Mistral", fetchedAt: Date.now(), windows: [], error: "HTTP 401" },
+  } as never);
+  assert.equal(failed, "mistral HTTP 401");
+
+  // A provider that is simply not quota-metered stays blank.
+  const unmetered = builtinRenderers.usageBars!({
+    theme,
+    quotaUsage: { provider: "umans", fetchedAt: Date.now(), windows: [] },
+  } as never);
+  assert.equal(unmetered, "");
+});
+
+test("extra usage providers render after the active provider without duplicates", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const mistral = {
+    provider: "Mistral",
+    fetchedAt: Date.now(),
+    windows: [{ label: "Vibe", usedPercent: 45, resetsIn: "7d" }],
+  };
+  const rendered = builtinRenderers.usageBars!({
+    theme,
+    quotaUsage: {
+      provider: "Codex",
+      fetchedAt: Date.now(),
+      windows: [{ label: "Week", usedPercent: 58, resetsIn: "4d" }],
+    },
+    extraUsage: [mistral, mistral, { provider: "Grok", fetchedAt: Date.now(), windows: [] }],
+  } as never);
+  assert.match(rendered, /^codex /);
+  assert.match(rendered, /mistral Vibe/);
+  assert.equal(rendered.match(/mistral/g)?.length, 1);
+  // A provider with no windows and no error contributes nothing.
+  assert.doesNotMatch(rendered, /grok/);
+});
+
+test("extra providers still render when the active provider has no meter", () => {
+  const theme = { fg: (_color: string, text: string) => text } as never;
+  const rendered = builtinRenderers.usageBars!({
+    theme,
+    quotaUsage: null,
+    extraUsage: [
+      { provider: "Mistral", fetchedAt: Date.now(), windows: [{ label: "Vibe", usedPercent: 12 }] },
+    ],
+  } as never);
+  assert.match(rendered, /mistral Vibe/);
+});
+
 test("live footer speed defaults to updates per second when no token data available", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
   const rendered = builtinRenderers.tps!({

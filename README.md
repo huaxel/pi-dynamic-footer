@@ -56,6 +56,22 @@ Context thresholds default to 70% (expert) and 85% (warning). The expert thresho
 
 Set `PI_OBS_SHOW_FULL_PATH=1` to start with the full home-relative working-directory path enabled.
 
+### Tracking more than the active provider
+
+The usage bars normally show the subscription of the provider the session is
+using. Set `PI_OBS_USAGE_PROVIDERS` to a comma-separated list (pi provider ids or
+aliases, e.g. `mistral,grok`) to fetch those as well and render them after the
+active provider:
+
+```bash
+PI_OBS_USAGE_PROVIDERS=mistral,grok pi
+```
+
+Each extra provider is fetched on the same refresh as the active one, deduplicated
+against it, and labelled with its own name (`mistral Vibe━──45% ↻ 7d`). A provider
+whose fetch fails shows the error (`mistral HTTP 401`) instead of a blank segment,
+so a bar that is missing is never ambiguous.
+
 ## Development
 
 ```bash

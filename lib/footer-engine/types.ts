@@ -37,6 +37,8 @@ export interface FooterInput {
   gitDiffRemoved: number;
   settings: FooterSettings;
   theme: PiTheme;
+  /** Extra provider snapshots (PI_OBS_USAGE_PROVIDERS), rendered after the active one */
+  extraUsage?: QuotaSnapshot[];
   /** Subscription usage bars data, fetched on session_start and periodically */
   quotaUsage: QuotaSnapshot | null;
 }

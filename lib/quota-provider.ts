@@ -5,8 +5,9 @@
  * normalization are delegated to the shared @juanbenjumea/pi-provider-usage-fetcher package.
  * Credentials come from existing pi auth/env sources and are never included in errors or logs.
  *
- * Supported providers: Claude, Codex, opencode-go, ClinePass, Umans,
- * GitHub Copilot, Google Gemini, Kimi Coding, Cursor, CommandCode, and Openference.
+ * Supported providers: Claude, Codex, OpenCode Go, ClinePass, Umans,
+ * GitHub Copilot, Google Gemini, Kimi Coding, Synthetic, z.ai / GLM, Grok,
+ * Cursor, CommandCode, and Openference.
  */
 
 import { createHash } from "node:crypto";
@@ -156,6 +157,34 @@ function evictStaleCache(): void {
     if (oldestKey === null) break;
     cache.delete(oldestKey);
   }
+}
+
+/**
+ * Resolve `PI_OBS_USAGE_PROVIDERS` into provider keys, dropping blanks, aliases
+ * that resolve to the active provider, and duplicates. Kept pure and exported so
+ * the parsing is testable without an extension runtime.
+ */
+export function resolveExtraUsageProviders(
+  raw: string | undefined,
+  activeProvider: string | null,
+): string[] {
+  const trimmed = raw?.trim();
+  if (!trimmed) return [];
+  // Normalize the active provider too: pi reports "openai-codex" while the
+  // configured entry may say "codex", and the duplicate would render twice.
+  const activeName = activeProvider?.trim();
+  const active = activeName ? detectProvider(activeName) ?? activeName.toLowerCase() : undefined;
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+  for (const entry of trimmed.split(",")) {
+    const candidate = entry.trim();
+    if (!candidate) continue;
+    const key = detectProvider(candidate) ?? candidate.toLowerCase();
+    if (key === active || seen.has(key)) continue;
+    seen.add(key);
+    resolved.push(key);
+  }
+  return resolved;
 }
 
 export async function fetchQuota(piProvider: string, options: QuotaFetchOptions = {}): Promise<QuotaSnapshot | null> {

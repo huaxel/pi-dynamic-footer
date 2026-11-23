@@ -13,6 +13,12 @@ import {
 /* ───── Usage bar helpers ───── */
 
 const BAR_FILLED = "━";
+
+/** Provider label for the usage bars: lower-case, hyphenated, unprefixed. */
+function providerTag(provider: string | undefined): string {
+  const cleaned = (provider ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+  return cleaned || "quota";
+}
 const BAR_EMPTY = "─";
 const THINKING_ABBR: Record<string, string> = {
   minimal: "min",
@@ -83,6 +89,24 @@ function renderUsageWindow(
   const pct = usedPercent > 0 ? dim(`${Math.round(usedPercent)}%`) : "";
   const reset = usedPercent > 30 && resetsIn ? dim(` ↻ ${resetsIn}`) : "";
   return `${dim(label)}${bar}${pct}${reset}`;
+}
+
+/**
+ * One provider's allowance as `tag label bar pct ↻reset` groups. A provider
+ * with no window and no error is simply not quota-metered, so it renders empty;
+ * one that failed renders the error rather than a blank segment.
+ */
+function renderUsageBars(
+  snapshot: NonNullable<FooterInput["quotaUsage"]>,
+  theme: FooterInput["theme"],
+): string {
+  const dim = (s: string) => theme.fg("dim", s);
+  const tag = providerTag(snapshot.provider);
+  const bars = snapshot.windows
+    .filter((window) => Number.isFinite(window.usedPercent))
+    .map((window) => renderUsageWindow(window.label, window.usedPercent, window.resetsIn, theme));
+  if (bars.length === 0) return snapshot.error ? `${dim(tag)} ${dim(snapshot.error)}` : "";
+  return dim(tag + " ") + bars.join(" " + theme.fg("dim", "\u25b8") + " ");
 }
 
 export const builtinRenderers: Record<string, SegmentRenderer> = {
@@ -214,14 +238,23 @@ export const builtinRenderers: Record<string, SegmentRenderer> = {
   },
 
   usageBars(input) {
-    const { quotaUsage, theme } = input;
-    if (!quotaUsage || quotaUsage.windows.length === 0) return "";
-
-    const dim = (s: string) => theme.fg("dim", s);
-    const sep = " " + theme.fg("dim", "▸") + " ";
-    return quotaUsage.windows
-      .filter((window) => Number.isFinite(window.usedPercent))
-      .map((window) => renderUsageWindow(window.label, window.usedPercent, window.resetsIn, theme))
-      .join(sep);
+    const { quotaUsage, theme, extraUsage } = input;
+    const sep = " " + theme.fg("dim", "\u25b8") + " ";
+    // The active provider comes first; extra providers from
+    // PI_OBS_USAGE_PROVIDERS follow, so a Mistral allowance stays visible while
+    // the session runs on Codex or Claude.
+    const snapshots = [quotaUsage, ...(extraUsage ?? [])].filter(
+      (snapshot): snapshot is NonNullable<typeof quotaUsage> => snapshot !== null && snapshot !== undefined,
+    );
+    const seen = new Set<string>();
+    const rendered: string[] = [];
+    for (const snapshot of snapshots) {
+      const key = snapshot.provider.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const text = renderUsageBars(snapshot, theme);
+      if (text) rendered.push(text);
+    }
+    return rendered.join(sep);
   },
 };

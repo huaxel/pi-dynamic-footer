@@ -1,6 +1,6 @@
 {
   "name": "@juanbenjumea/pi-dynamic-footer",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Dynamic configurable footer for pi with live observability: context gauge, TPS, token/cost tracking, subscription usage bars, git status, and a full settings UI.",
   "type": "module",
   "license": "MIT",
@@ -42,7 +42,7 @@
     "@earendil-works/pi-tui": "*"
   },
   "dependencies": {
-    "@juanbenjumea/pi-provider-usage-fetcher": "^0.3.4"
+    "@juanbenjumea/pi-provider-usage-fetcher": "^0.3.6"
   },
   "devDependencies": {
     "typescript": "^5.0.0"

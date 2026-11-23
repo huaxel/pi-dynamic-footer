@@ -46,7 +46,12 @@ import {
 import { renderFooter, type FooterInput } from "./lib/footer-engine/index.js";
 
 import { createFileStorage, getDefaultObservabilityDir, type Storage } from "./lib/storage/index.js";
-import { fetchQuota, type QuotaSnapshot } from "./lib/quota-provider.ts";
+import {
+  fetchQuota,
+  resolveExtraUsageProviders,
+  safeError,
+  type QuotaSnapshot,
+} from "./lib/quota-provider.ts";
 import { registerOpencodeGoRefresh } from "./lib/opencode-go-integration.ts";
 
 /* ───── Types ───── */
@@ -78,6 +83,8 @@ interface SessionState {
   serviceTier: string | null;
   settings: SettingsConfig;
   quotaUsage: QuotaSnapshot | null;
+  /** Additional providers from PI_OBS_USAGE_PROVIDERS, rendered after the active one. */
+  extraQuotaUsage: QuotaSnapshot[];
 }
 
 interface ModelRegistryLike {
@@ -136,8 +143,18 @@ export default function (pi: ExtensionAPI) {
     fastModeEnabled: false,
     serviceTier: null,
     quotaUsage: null,
+    extraQuotaUsage: [],
     settings: createDefaultSettings(),
   };
+
+  /**
+   * Providers to track in addition to the active model's own, from
+   * PI_OBS_USAGE_PROVIDERS (`mistral,grok`); the footer otherwise only knows the
+   * provider the session is currently using.
+   */
+  function extraUsageProviders(activeProvider: string | null): string[] {
+    return resolveExtraUsageProviders(process.env.PI_OBS_USAGE_PROVIDERS, activeProvider);
+  }
 
   async function refreshQuota(ctx: ExtensionContext): Promise<void> {
     const provider = ctx.model?.provider;
@@ -162,14 +179,32 @@ export default function (pi: ExtensionAPI) {
       }
     }
 
+    const extras = extraUsageProviders(provider);
+    const extraResults = Promise.allSettled(extras.map((key) => fetchQuota(key, {})));
+
     try {
       const snapshot = await fetchQuota(provider, { apiKey });
       if (epoch === quotaEpoch) state.quotaUsage = snapshot;
-    } catch {
-      if (epoch === quotaEpoch) state.quotaUsage = null;
-    } finally {
-      requestFooterRender();
+    } catch (error) {
+      // Keep the failure visible: a blank segment cannot be told apart from a
+      // provider that has no quota meter at all.
+      if (epoch === quotaEpoch) {
+        state.quotaUsage = {
+          provider,
+          windows: [],
+          error: safeError(error),
+          fetchedAt: Date.now(),
+        };
+      }
     }
+
+    const settled = await extraResults;
+    if (epoch === quotaEpoch) {
+      state.extraQuotaUsage = settled
+        .map((result) => (result.status === "fulfilled" ? result.value : null))
+        .filter((snapshot): snapshot is QuotaSnapshot => snapshot !== null);
+    }
+    requestFooterRender();
   }
 
   /* ─── Lifecycle ─── */
@@ -195,6 +230,7 @@ export default function (pi: ExtensionAPI) {
       if (ctx.hasUI) ctx.ui.notify("Observability settings unavailable; using defaults", "warning");
     }
     state.quotaUsage = null;
+    state.extraQuotaUsage = [];
     const envPath = process.env.PI_OBS_SHOW_FULL_PATH?.trim().toLowerCase();
     if (envPath === "1" || envPath === "true") {
       state.settings = { ...state.settings, showFullPath: true };
@@ -468,6 +504,7 @@ export default function (pi: ExtensionAPI) {
             settings: state.settings,
             theme,
             quotaUsage: state.quotaUsage,
+            extraUsage: state.extraQuotaUsage,
           };
 
           const footerLines = renderFooter(input, width);
