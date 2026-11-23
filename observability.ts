@@ -150,6 +150,9 @@ export default function (pi: ExtensionAPI) {
     settings: createDefaultSettings(),
   };
 
+  /** Last successful snapshot per extra provider, so a failed refresh is not a vanishing bar. */
+  const lastGoodExtras = new Map<string, QuotaSnapshot>();
+
   /**
    * Providers to track in addition to the active model's own.
    *
@@ -232,7 +235,16 @@ export default function (pi: ExtensionAPI) {
     if (epoch === quotaEpoch) {
       const snapshots = settled
         .map((result) => (result.status === "fulfilled" ? result.value : null))
-        .filter((snapshot): snapshot is QuotaSnapshot => snapshot !== null);
+        .filter((snapshot): snapshot is QuotaSnapshot => snapshot !== null)
+        // A refresh that fails should not make a bar that was there a moment
+        // ago disappear: hold the last good reading until a newer one lands.
+        .map((snapshot) => {
+          if (!snapshot.error) {
+            lastGoodExtras.set(snapshot.provider, snapshot);
+            return snapshot;
+          }
+          return lastGoodExtras.get(snapshot.provider) ?? snapshot;
+        });
       state.extraQuotaUsage = visibleExtraUsage(snapshots, extrasRequestedExplicitly());
     }
     requestFooterRender();

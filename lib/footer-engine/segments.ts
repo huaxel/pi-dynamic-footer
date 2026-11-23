@@ -92,9 +92,31 @@ function renderUsageWindow(
 }
 
 /**
+ * Windows worth showing.
+ *
+ * A window at 0% renders as an empty bar with no percentage, which is
+ * indistinguishable from a rendering fault and pushes the reader across empty
+ * segments: `opencode-go 5h─── ▸ Week─── ▸ Month━──47%`. The reset time is the
+ * only signal such a window carries, and it is the one you can already infer
+ * from the window label. Zero-usage windows are dropped, except when every
+ * window is zero: then one empty bar stays, because "nothing used" is a
+ * different fact from "no meter".
+ */
+export function presentUsageWindows<T extends { usedPercent: number }>(windows: readonly T[]): T[] {
+  const metered = windows.filter((window) => Number.isFinite(window.usedPercent));
+  const used = metered.filter((window) => window.usedPercent > 0);
+  if (used.length > 0) return used;
+  return metered.slice(0, 1);
+}
+
+/**
  * One provider's allowance as `tag label bar pct ↻reset` groups. A provider
  * with no window and no error is simply not quota-metered, so it renders empty;
  * one that failed renders the error rather than a blank segment.
+ *
+ * Every window keeps its label, active provider or not: the point of the extra
+ * bars is the usage of *that* provider, and `mistral Vibe━──45%` answers "how
+ * much of my Mistral allowance is left" while a bare percentage does not.
  */
 function renderUsageBars(
   snapshot: NonNullable<FooterInput["quotaUsage"]>,
@@ -102,9 +124,9 @@ function renderUsageBars(
 ): string {
   const dim = (s: string) => theme.fg("dim", s);
   const tag = providerTag(snapshot.provider);
-  const bars = snapshot.windows
-    .filter((window) => Number.isFinite(window.usedPercent))
-    .map((window) => renderUsageWindow(window.label, window.usedPercent, window.resetsIn, theme));
+  const bars = presentUsageWindows(snapshot.windows).map((window) =>
+    renderUsageWindow(window.label, window.usedPercent, window.resetsIn, theme),
+  );
   if (bars.length === 0) return snapshot.error ? `${dim(tag)} ${dim(snapshot.error)}` : "";
   return dim(tag + " ") + bars.join(" " + theme.fg("dim", "\u25b8") + " ");
 }

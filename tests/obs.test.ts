@@ -135,24 +135,35 @@ test("quota parser accepts both dashboard field orders", () => {
   assert.deepEqual(parsed.monthly, { usagePercent: 1, resetInSec: 3600 });
 });
 
-test("quota footer keeps low-usage and monthly windows visible", () => {
+test("quota footer keeps low-usage windows visible but drops untouched ones", () => {
   const theme = { fg: (_color: string, text: string) => text } as never;
-  const rendered = builtinRenderers.usageBars!({
-    theme,
-    quotaUsage: {
-      provider: "test",
-      fetchedAt: Date.now(),
-      windows: [
-        { label: "5h", usedPercent: 0, resetsIn: "5h" },
-        { label: "Month", usedPercent: 50, resetsIn: "20d" },
-      ],
-    },
-  } as never);
-  assert.match(rendered, /5h/);
-  assert.match(rendered, /Month/);
+  const render = (windows: { label: string; usedPercent: number; resetsIn?: string }[]) =>
+    builtinRenderers.usageBars!({
+      theme,
+      quotaUsage: { provider: "test", fetchedAt: Date.now(), windows },
+    } as never);
+
+  // A window with a little usage still carries its label and reset...
+  const low = render([
+    { label: "5h", usedPercent: 2, resetsIn: "5h" },
+    { label: "Month", usedPercent: 50, resetsIn: "20d" },
+  ]);
+  assert.match(low, /5h/);
+  assert.match(low, /Month/);
   // Reset indicator — shown only when usedPercent > 30
-  assert.doesNotMatch(rendered, /↻5h/);
-  assert.match(rendered, /↻ 20d/);
+  assert.doesNotMatch(low, /↻5h/);
+  assert.match(low, /↻ 20d/);
+
+  // ...but a window at 0% is an empty bar that reads as a rendering fault.
+  const untouched = render([
+    { label: "5h", usedPercent: 0, resetsIn: "5h" },
+    { label: "Week", usedPercent: 0, resetsIn: "6d" },
+    { label: "Month", usedPercent: 47, resetsIn: "12d" },
+  ]);
+  assert.equal(untouched, "test Month━──47% ↻ 12d");
+
+  // Nothing spent anywhere is still a meter, not a missing meter.
+  assert.equal(render([{ label: "5h", usedPercent: 0, resetsIn: "5h" }]), "test 5h───");
 });
 
 test("quota footer names the provider it belongs to", () => {
